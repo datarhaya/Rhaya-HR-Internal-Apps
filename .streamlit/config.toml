@@ -1,0 +1,15 @@
+
+[client]
+showSidebarNavigation = false
+toolbarMode = "viewer"
+
+
+[theme]
+primaryColor="#006a71"
+backgroundColor="#f2efe7"
+secondaryBackgroundColor="#48a6a7"
+textColor="#1b1b1b"
+font="sans serif"
+
+
+

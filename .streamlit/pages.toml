@@ -1,0 +1,44 @@
+[[pages]]
+path = "pages/login.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/dashboard.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/admin_control.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/admin_leave_control.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/debug_auth.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/leave_approval.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/leave_request.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/overtime_management.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/overtime_approval.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"

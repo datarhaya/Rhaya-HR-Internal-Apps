@@ -1,0 +1,14 @@
+pandas
+pillow
+requests
+plotly
+numpy
+streamlit
+st_pages
+streamlit-authenticator==0.4.2
+firebase-admin
+google-auth
+google-cloud-storage
+google-cloud-secret-manager
+google-cloud-firestore
+firebase_admin

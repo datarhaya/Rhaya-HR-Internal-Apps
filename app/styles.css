@@ -1,0 +1,170 @@
+.stAppHeader {
+    background-color: rgba(255, 255, 255, 0.0);  /* Transparent background */
+    visibility: visible;  /* Ensure the header is visible */
+}
+
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 0rem;
+    padding-left: 5rem;
+    padding-right: 5rem;
+}
+
+/* Smaller padding on small screens (phones, tablets) */
+@media (max-width: 768px) {
+    .block-container {
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+}
+
+/* Make only sidebar labels white */
+section[data-testid="stSidebar"] label {
+    color: white !important;
+}
+
+/* Make all sidebar widget labels white */
+section[data-testid="stSidebar"] label {
+    color: white !important;
+}
+
+/* Make slider thumb values white */
+section[data-testid="stSidebar"] [data-testid="stSliderThumbValue"] {
+    color: white !important;
+}
+
+/* Make slider min/max tick labels white */
+section[data-testid="stSidebar"] [data-testid="stSliderTickBarMin"],
+section[data-testid="stSidebar"] [data-testid="stSliderTickBarMax"] {
+    color: white !important;
+}
+
+/* Optional: make the slider background lighter or darker */
+section[data-testid="stSidebar"] .stSlider {
+    color: white !important;
+}
+
+
+/* General Container for Cast & Crew */
+.container {
+    display: flex;
+    justify-content: space-around;
+    /* /* background-color: rgba(0, 128, 255, 0.1);  */
+    padding: 10px;
+    border-radius: 10px;
+    color: white; /* White font color */
+    font-family: Arial, sans-serif;
+}
+
+/* Individual Section */
+.section {
+    margin: 0 10px;
+}
+
+.section h4 {
+    font-weight: bold;
+    font-size: 16px;
+    margin-bottom: 10px;
+    color: #ffffff; /* White color for headings */
+}
+
+.section ul {
+    list-style-type: none; /* Removes bullet points */
+    padding: 0;
+}
+
+.section li {
+    font-size: 14px;
+    line-height: 1.8;
+    font-family: 'Plus Jakarta Sans';
+    color: #f0f0f0; /* Light gray text for list items */
+}
+
+[data-testid=stSidebar] {
+    background-color: #0D2A52;
+}
+/* Change the text color inside sidebar selectbox */
+[data-testid=stSidebar] .stSelectbox label {
+    color: white;
+}
+[data-testid=stSidebar] .stSelectbox div[data-baseweb="select"] {
+    color: white;
+}
+
+h1#rhaya-flicks-hr-internal-apps {
+    display: none;
+}
+
+/* Hide the anchor link icon */
+[data-testid="stHeaderActionElements"] {
+    display: none;
+}
+
+/* Remove padding from the element container above it */
+div.element-container:has(h1#rhaya-flicks-hr-internal-apps) {
+    padding: 0px !important;
+    margin: 0px !important;
+}
+
+/* Hide CookieManager iframe */
+iframe[src*="CookieManager.cookie_manager"] {
+    display: none !important;
+    height: 0px !important;
+}
+
+/* Optional: hide its container div to collapse spacing */
+div.element-container:has(iframe[src*="CookieManager.cookie_manager"]) {
+    display: none !important;
+    height: 0px !important;
+    margin: 0px !important;
+    padding: 0px !important;
+}
+
+/* Make all Streamlit images rounded */
+img {
+    border-radius: 50% !important;
+    object-fit: cover;
+}
+
+/* Optional: fix container size to ensure proper circle shape */
+[data-testid="stImage"] img {
+    width: 200px !important;
+    height: 200px !important;
+}
+
+.stImage.st-emotion-cache-1dvmtd8.evl31sl0 > div {
+    width: 30vw;             /* Responsive width */
+    max-width: 200px;        /* Limit max size on large screens */
+    aspect-ratio: 1 / 1;     /* Maintain a square */
+    border-radius: 50%;
+    overflow: hidden;
+    position: relative;
+}
+
+.stImage.st-emotion-cache-1dvmtd8.evl31sl0 > div > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;       /* Ensures it fills the circle */
+    display: block;
+}
+
+/* Sidebar background and text color */
+section[data-testid="stSidebar"] {
+    background-color: #002B5B;  /* Dark blue background */
+    color: white;
+}
+
+/* Force white text for all sidebar content */
+section[data-testid="stSidebar"] * {
+    color: white !important;
+}
+
+/* Optional: change expander arrow color */
+section[data-testid="stSidebar"] summary {
+    color: white !important;
+}
+
+/* Optional: style HR contact info or links if needed */
+section[data-testid="stSidebar"] a {
+    color: #ADD8E6 !important;  /* Light blue for links */
+}
