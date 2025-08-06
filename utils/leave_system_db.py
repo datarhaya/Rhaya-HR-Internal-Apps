@@ -4,7 +4,7 @@ from google.cloud import firestore
 from firebase_admin.firestore import SERVER_TIMESTAMP
 from google.oauth2 import service_account
 from datetime import datetime, timedelta, date
-import calendar
+
 
 def get_db():
     """Get Firestore database instance"""
@@ -81,17 +81,18 @@ LEAVE_TYPES = {
 
 # OVERTIME SYSTEM FUNCTIONS
 
+# Updated submit_overtime_request function with better date handling
 def submit_overtime_request(employee_id, overtime_data):
     """
-    Submit overtime request for the week
+    Submit overtime request - Updated to handle individual date entries
     overtime_data = {
-        "week_start": "2024-01-01",
-        "week_end": "2024-01-07", 
+        "week_start": "2024-01-01",  # Can be calculated from entries
+        "week_end": "2024-01-07",    # Can be calculated from entries
         "overtime_entries": [
-            {"date": "2024-01-06", "hours": 4, "description": "Project X completion"},
-            {"date": "2024-01-07", "hours": 3, "description": "System maintenance"}
+            {"date": "2024-01-06", "hours": 4.0, "description": "Project X completion"},
+            {"date": "2024-01-07", "hours": 3.5, "description": "System maintenance"}
         ],
-        "total_hours": 7,
+        "total_hours": 7.5,
         "reason": "Project deadline and maintenance"
     }
     """
@@ -116,7 +117,7 @@ def submit_overtime_request(employee_id, overtime_data):
             "week_start": overtime_data["week_start"],
             "week_end": overtime_data["week_end"],
             "overtime_entries": overtime_data["overtime_entries"],
-            "total_hours": overtime_data["total_hours"],
+            "total_hours": float(overtime_data["total_hours"]),  # Ensure it's a float
             "reason": overtime_data.get("reason", ""),
             "status": "pending",
             "approver_id": approver_id,
@@ -143,8 +144,80 @@ def submit_overtime_request(employee_id, overtime_data):
         print(f"Error submitting overtime request: {e}")
         return {"success": False, "message": f"Error submitting request: {str(e)}"}
 
+# Updated function to check for overlapping requests by date
+def get_employee_overtime_requests_by_date_range(employee_id, start_date, end_date):
+    """Get existing overtime requests that overlap with the given date range"""
+    try:
+        query = db.collection("overtime_requests").where("employee_id", "==", employee_id)
+        
+        overlapping_requests = []
+        
+        for doc in query.stream():
+            request_data = doc.to_dict()
+            request_start = datetime.strptime(request_data.get("week_start", ""), "%Y-%m-%d").date()
+            request_end = datetime.strptime(request_data.get("week_end", ""), "%Y-%m-%d").date()
+            
+            # Check for overlap
+            if not (end_date < request_start or start_date > request_end):
+                request_data["id"] = doc.id
+                overlapping_requests.append(request_data)
+        
+        return overlapping_requests
+        
+    except Exception as e:
+        print(f"Error getting overtime requests by date range: {e}")
+        return []
+
+
+# Enhanced validation to check for date conflicts
+def validate_overtime_dates(employee_id, overtime_entries):
+    """Check if any of the overtime dates conflict with existing requests"""
+    try:
+        request_dates = [datetime.strptime(entry["date"], "%Y-%m-%d").date() for entry in overtime_entries]
+        
+        if not request_dates:
+            return {"valid": False, "message": "No overtime dates provided"}
+        
+        start_date = min(request_dates)
+        end_date = max(request_dates)
+        
+        # Check for overlapping requests
+        existing_requests = get_employee_overtime_requests_by_date_range(employee_id, start_date, end_date)
+        
+        if existing_requests:
+            conflicting_dates = []
+            for existing in existing_requests:
+                for entry in existing.get("overtime_entries", []):
+                    existing_date = datetime.strptime(entry["date"], "%Y-%m-%d").date()
+                    if existing_date in request_dates:
+                        conflicting_dates.append(existing_date.strftime("%Y-%m-%d"))
+            
+            if conflicting_dates:
+                return {
+                    "valid": False, 
+                    "message": f"Overtime already submitted for dates: {', '.join(conflicting_dates)}"
+                }
+        
+        return {"valid": True, "message": "No date conflicts found"}
+        
+    except Exception as e:
+        return {"valid": False, "message": f"Error validating dates: {str(e)}"}
+
+
+# Helper function to get week range from individual dates
+def calculate_week_range_from_entries(overtime_entries):
+    """Calculate week start and end from overtime entries"""
+    try:
+        dates = [datetime.strptime(entry["date"], "%Y-%m-%d").date() for entry in overtime_entries]
+        week_start = min(dates)
+        week_end = max(dates)
+        return week_start.strftime("%Y-%m-%d"), week_end.strftime("%Y-%m-%d")
+    except Exception as e:
+        print(f"Error calculating week range: {e}")
+        return None, None
+
 def validate_overtime_request(employee_id, overtime_data):
-    """Validate overtime request against business rules"""
+    """Validate overtime request against business rules - REMOVED weekend/holiday validation"""
     try:
         # Check if dates are valid
         week_start = datetime.strptime(overtime_data["week_start"], "%Y-%m-%d").date()
@@ -156,47 +229,41 @@ def validate_overtime_request(employee_id, overtime_data):
         if week_end > date.today():
             return {"valid": False, "message": "Cannot submit overtime for future dates"}
         
-        # Check if overtime is only on weekends/holidays
+        # Validate hours for each entry
         for entry in overtime_data["overtime_entries"]:
             overtime_date = datetime.strptime(entry["date"], "%Y-%m-%d").date()
             
-            # Check if it's weekend (Saturday = 5, Sunday = 6)
-            if overtime_date.weekday() not in [5, 6]:
-                return {"valid": False, "message": f"Overtime only allowed on weekends and holidays. {entry['date']} is a weekday."}
+            # REMOVED: Weekend/holiday validation - now allows any date
             
             # Validate hours
             if entry["hours"] <= 0 or entry["hours"] > 12:
-                return {"valid": False, "message": f"Invalid overtime hours: {entry['hours']}. Must be between 1-12 hours per day."}
+                return {"valid": False, "message": f"Invalid overtime hours: {entry['hours']}. Must be between 0.5-12 hours per day."}
         
         # Check total hours
         calculated_total = sum([entry["hours"] for entry in overtime_data["overtime_entries"]])
-        if calculated_total != overtime_data["total_hours"]:
+        if abs(calculated_total - overtime_data["total_hours"]) > 0.01:  # Allow small floating point differences
             return {"valid": False, "message": "Total hours mismatch with individual entries"}
         
-        # Check for duplicate submissions
+        # Check for duplicate submissions (same date range)
         existing_requests = get_employee_overtime_requests_by_week(
             employee_id, overtime_data["week_start"], overtime_data["week_end"]
         )
         if existing_requests:
-            return {"valid": False, "message": "Overtime request already exists for this week"}
+            return {"valid": False, "message": "Overtime request already exists for this period"}
         
         return {"valid": True, "message": "Valid overtime request"}
         
     except Exception as e:
         return {"valid": False, "message": f"Validation error: {str(e)}"}
 
+# Updated get_employee_overtime_requests_by_week to handle flexible date ranges
 def get_employee_overtime_requests_by_week(employee_id, week_start, week_end):
-    """Get existing overtime requests for a specific week"""
+    """Get existing overtime requests for a specific date range"""
     try:
-        query = db.collection("overtime_requests").where("employee_id", "==", employee_id).where("week_start", "==", week_start).where("week_end", "==", week_end)
+        start_date = datetime.strptime(week_start, "%Y-%m-%d").date()
+        end_date = datetime.strptime(week_end, "%Y-%m-%d").date()
         
-        requests = []
-        for doc in query.stream():
-            request_data = doc.to_dict()
-            request_data["id"] = doc.id
-            requests.append(request_data)
-        
-        return requests
+        return get_employee_overtime_requests_by_date_range(employee_id, start_date, end_date)
         
     except Exception as e:
         print(f"Error getting overtime requests by week: {e}")
@@ -442,8 +509,9 @@ def get_overtime_report_data(month=None, division_id=None):
         print(f"Error getting overtime report data: {e}")
         return []
 
+# Updated reset_overtime_balances function to store reset date
 def reset_overtime_balances(month):
-    """Reset overtime balances after payroll processing"""
+    """Reset overtime balances after payroll processing and store reset date"""
     try:
         query = db.collection("overtime_balances").where("month", "==", month)
         
@@ -461,11 +529,22 @@ def reset_overtime_balances(month):
             
             reset_count += 1
         
+        # Store the reset date in system settings
+        reset_date = datetime.now()
+        settings_ref = db.collection("system_settings").document("overtime_reset")
+        settings_ref.set({
+            "last_reset_date": reset_date,
+            "last_reset_month": month,
+            "reset_count": reset_count,
+            "updated_at": SERVER_TIMESTAMP
+        })
+        
         return {"success": True, "message": f"Reset overtime balances for {reset_count} employees in {month}"}
         
     except Exception as e:
         print(f"Error resetting overtime balances: {e}")
         return {"success": False, "message": f"Error resetting balances: {str(e)}"}
+
 
 # ENHANCED LEAVE SYSTEM WITH ADMIN CONTROL
 

@@ -1,4 +1,4 @@
-# pages/overtime_management.py
+# pages/overtime_management.py - Enhanced with simplified date selection and individual date entry
 import streamlit as st
 from datetime import datetime, date, timedelta
 import utils.database as db
@@ -6,7 +6,7 @@ from utils.auth import check_authentication
 from utils.logout_handler import is_authenticated, handle_logout, clear_cookies_js
 from utils.leave_system_db import (
     submit_overtime_request, get_employee_overtime_requests,
-    get_employee_overtime_balance, validate_overtime_request
+    get_employee_overtime_balance
 )
 import pandas as pd
 import calendar
@@ -28,6 +28,29 @@ user_data = st.session_state["user_data"]
 employee_id = user_data.get("employee_id")
 access_level = user_data.get("access_level", 4)
 
+def get_last_overtime_reset_date():
+    """Get the last overtime balance reset date to set minimum date for overtime submission"""
+    try:
+        # Check system settings or overtime_balances for last reset
+        # This would be stored when admin resets balances
+        settings_ref = db.collection("system_settings").document("overtime_reset")
+        settings_data = settings_ref.get().to_dict()
+        
+        if settings_data and settings_data.get("last_reset_date"):
+            reset_date = settings_data["last_reset_date"]
+            if hasattr(reset_date, 'timestamp'):
+                return datetime.fromtimestamp(reset_date.timestamp()).date()
+            else:
+                return datetime.strptime(reset_date, "%Y-%m-%d").date()
+        
+        # If no reset date found, default to beginning of current year
+        return date(datetime.now().year, 1, 1)
+        
+    except Exception as e:
+        print(f"Error getting last reset date: {e}")
+        # Fallback to beginning of current year
+        return date(datetime.now().year, 1, 1)
+
 def get_week_dates(selected_date):
     """Get the start and end dates of the week containing the selected date"""
     # Find Monday of the week (weekday() returns 0 for Monday)
@@ -35,10 +58,12 @@ def get_week_dates(selected_date):
     week_start = selected_date - timedelta(days=days_since_monday)
     week_end = week_start + timedelta(days=6)  # Sunday
     return week_start, week_end
-
-def is_weekend_or_holiday(date_obj):
-    """Check if date is weekend (Saturday=5, Sunday=6)"""
-    return date_obj.weekday() in [5, 6]
+    """Get the start and end dates of the week containing the selected date"""
+    # Find Monday of the week (weekday() returns 0 for Monday)
+    days_since_monday = selected_date.weekday()
+    week_start = selected_date - timedelta(days=days_since_monday)
+    week_end = week_start + timedelta(days=6)  # Sunday
+    return week_start, week_end
 
 # Page header
 st.title("⏰ Overtime Management")
@@ -74,169 +99,201 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 with tab1:
-    st.subheader("📝 Submit Weekly Overtime Request")
+    st.subheader("📝 Submit Overtime Request")
     
     st.info("""
-    **Overtime Rules:**
-    - Overtime is only allowed on weekends (Saturday & Sunday) and public holidays
-    - Submit weekly overtime requests (Monday to Sunday)
+    **Overtime Submission:**
+    - Select specific dates and enter overtime hours
     - Maximum 12 hours per day
     - Include detailed description for each overtime day
+    - Submit for approval once completed
     """)
     
-    # Week selection
-    col1, col2 = st.columns(2)
+    # Initialize overtime entries in session state
+    if "overtime_entries" not in st.session_state:
+        st.session_state.overtime_entries = []
     
-    with col1:
-        selected_date = st.date_input(
-            "Select any date in the week",
-            value=date.today() - timedelta(days=7),  # Default to last week
-            max_value=date.today(),
-            help="Select any date in the week you want to submit overtime for"
-        )
+    # Get minimum date from last reset
+    min_date = get_last_overtime_reset_date()
     
-    with col2:
-        week_start, week_end = get_week_dates(selected_date)
-        st.info(f"**Week Period:**\n{week_start.strftime('%d %b %Y')} - {week_end.strftime('%d %b %Y')}")
+    # Date and hours input form
+    st.markdown("### ➕ Add Overtime Entry")
     
-    # Check if week is in the past
-    if week_end > date.today():
-        st.warning("⚠️ Cannot submit overtime for future dates")
-    else:
-        # Show week calendar
-        st.markdown("### 📅 Week Overview")
+    with st.form("add_overtime_entry", clear_on_submit=True):
+        col1, col2, col3 = st.columns([2, 1, 3])
         
-        week_days = []
-        current_date = week_start
+        with col1:
+            overtime_date = st.date_input(
+                "Date",
+                value=date.today() - timedelta(days=1),  # Default to yesterday
+                min_value=min_date,  # Set minimum date from last reset
+                max_value=date.today(),
+                help=f"Select the date you worked overtime (earliest: {min_date.strftime('%d %b %Y')})"
+            )
         
-        for i in range(7):
-            day_name = current_date.strftime("%A")
-            is_overtime_eligible = is_weekend_or_holiday(current_date)
-            
-            week_days.append({
-                "Date": current_date.strftime("%d %b"),
-                "Day": day_name,
-                "Eligible": "✅ Yes" if is_overtime_eligible else "❌ No",
-                "Type": "Weekend" if is_overtime_eligible else "Weekday"
-            })
-            
-            current_date += timedelta(days=1)
+        with col2:
+            hours = st.number_input(
+                "Hours",
+                min_value=0.5,
+                max_value=12.0,
+                step=0.5,
+                value=1.0,
+                help="Overtime hours (0.5 - 12 hours)"
+            )
         
-        df_week = pd.DataFrame(week_days)
-        st.dataframe(df_week, use_container_width=True, hide_index=True)
+        with col3:
+            description = st.text_input(
+                "Work Description",
+                placeholder="e.g., Project completion, System maintenance, Client meeting",
+                help="Describe the work performed during overtime"
+            )
         
-        # Overtime entry form
-        st.markdown("### ⏰ Enter Overtime Hours")
+        add_entry = st.form_submit_button("➕ Add Entry", type="primary")
         
-        with st.form("overtime_form"):
-            overtime_entries = []
-            total_hours = 0
-            
-            # Create inputs for each eligible day
-            eligible_days = [day for day in week_days if "✅ Yes" in day["Eligible"]]
-            
-            if not eligible_days:
-                st.warning("No eligible overtime days in this week (weekends/holidays only)")
+        if add_entry:
+            if hours <= 0:
+                st.error("Please enter valid overtime hours")
+            elif not description.strip():
+                st.error("Please provide a description of the work performed")
             else:
-                st.markdown("**Enter overtime hours for eligible days:**")
+                # Check if date already exists
+                existing_dates = [entry["date"] for entry in st.session_state.overtime_entries]
+                if overtime_date.strftime("%Y-%m-%d") in existing_dates:
+                    st.error("Entry for this date already exists. Please edit or remove the existing entry.")
+                else:
+                    # Add new entry
+                    new_entry = {
+                        "date": overtime_date.strftime("%Y-%m-%d"),
+                        "date_display": overtime_date.strftime("%A, %d %B %Y"),
+                        "hours": hours,
+                        "description": description.strip()
+                    }
+                    st.session_state.overtime_entries.append(new_entry)
+                    st.success(f"Added {hours}h overtime for {overtime_date.strftime('%d %B %Y')}")
+                    st.rerun()
+    
+    # Display current entries
+    if st.session_state.overtime_entries:
+        st.markdown("### 📋 Current Overtime Entries")
+        
+        # Sort entries by date
+        st.session_state.overtime_entries.sort(key=lambda x: x["date"])
+        
+        total_hours = sum(entry["hours"] for entry in st.session_state.overtime_entries)
+        total_days = len(st.session_state.overtime_entries)
+        
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Days", total_days)
+        with col2:
+            st.metric("Total Hours", f"{total_hours:.1f}h")
+        with col3:
+            avg_hours = total_hours / total_days if total_days > 0 else 0
+            st.metric("Avg Hours/Day", f"{avg_hours:.1f}h")
+        
+        st.markdown("---")
+        
+        # Display entries in a clean format
+        for i, entry in enumerate(st.session_state.overtime_entries):
+            with st.container():
+                col1, col2, col3, col4 = st.columns([3, 1, 3, 1])
                 
-                for day in eligible_days:
-                    day_date = datetime.strptime(f"{day['Date']} {week_start.year}", "%d %b %Y").date()
-                    
-                    col_day, col_hours, col_desc = st.columns([1, 1, 2])
-                    
-                    with col_day:
-                        st.write(f"**{day['Day']}**")
-                        st.write(f"{day['Date']}")
-                    
-                    with col_hours:
-                        hours = st.number_input(
-                            "Hours",
-                            min_value=0.0,
-                            max_value=12.0,
-                            step=0.5,
-                            key=f"hours_{day_date}",
-                            help="Maximum 12 hours per day"
-                        )
-                    
-                    with col_desc:
-                        description = st.text_input(
-                            "Description",
-                            key=f"desc_{day_date}",
-                            placeholder="e.g., Project X completion, System maintenance",
-                            help="Describe the work performed"
-                        )
-                    
-                    if hours > 0:
-                        if not description.strip():
-                            st.error(f"Please provide description for {day['Day']} overtime")
-                        else:
-                            overtime_entries.append({
-                                "date": day_date.strftime("%Y-%m-%d"),
-                                "hours": hours,
-                                "description": description
-                            })
-                            total_hours += hours
+                with col1:
+                    st.write(f"📅 **{entry['date_display']}**")
                 
-                # Overall reason
+                with col2:
+                    st.write(f"⏰ **{entry['hours']}h**")
+                
+                with col3:
+                    st.write(f"📝 {entry['description']}")
+                
+                with col4:
+                    if st.button("🗑️", key=f"remove_{i}", help="Remove entry"):
+                        st.session_state.overtime_entries.pop(i)
+                        st.rerun()
+                
                 st.markdown("---")
-                overall_reason = st.text_area(
-                    "Overall Reason for Overtime *",
-                    placeholder="Explain the overall reason for this overtime week...",
-                    help="Provide context for why overtime was necessary this week",
-                    max_chars=500
-                )
-                
-                # Summary
-                if overtime_entries:
-                    st.markdown("### 📊 Overtime Summary")
+        
+        # Overall reason and submit
+        st.markdown("### 📄 Submit Request")
+        
+        overall_reason = st.text_area(
+            "Overall Reason for Overtime *",
+            placeholder="Explain the overall context for this overtime (e.g., project deadline, urgent maintenance, client emergency)",
+            help="Provide context for why overtime was necessary",
+            max_chars=500
+        )
+        
+        # Submit button
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            if st.button("🚀 Submit Overtime Request", type="primary", use_container_width=True):
+                if not overall_reason.strip():
+                    st.error("❌ Please provide an overall reason for overtime")
+                else:
+                    # Calculate week range for the entries
+                    dates = [datetime.strptime(entry["date"], "%Y-%m-%d").date() for entry in st.session_state.overtime_entries]
+                    week_start = min(dates)
+                    week_end = max(dates)
                     
-                    col1, col2, col3 = st.columns(3)
+                    # Prepare overtime data
+                    overtime_data = {
+                        "week_start": week_start.strftime("%Y-%m-%d"),
+                        "week_end": week_end.strftime("%Y-%m-%d"),
+                        "overtime_entries": st.session_state.overtime_entries,
+                        "total_hours": total_hours,
+                        "reason": overall_reason.strip()
+                    }
+                    
+                    # Submit overtime request
+                    result = submit_overtime_request(employee_id, overtime_data)
+                    
+                    if result["success"]:
+                        st.success(f"✅ {result['message']}")
+                        st.balloons()
+                        st.info("Your overtime request has been sent to your supervisor for approval.")
+                        
+                        # Clear entries
+                        st.session_state.overtime_entries = []
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {result['message']}")
+        
+        with col2:
+            if st.button("🗑️ Clear All Entries", type="secondary", use_container_width=True):
+                st.session_state.overtime_entries = []
+                st.rerun()
+    
+    else:
+        st.info("📝 No overtime entries added yet. Use the form above to add your overtime hours.")
+        
+        # Check if user has pending requests and show them
+        recent_requests = get_employee_overtime_requests(employee_id, limit=3)
+        if recent_requests:
+            st.markdown("### 📋 Recent Requests")
+            
+            for request in recent_requests:
+                status = request.get("status", "unknown")
+                status_icon = "🕐" if status == "pending" else "✅" if status == "approved" else "❌"
+                
+                with st.container():
+                    col1, col2, col3 = st.columns([2, 1, 1])
                     
                     with col1:
-                        st.metric("Total Days", len(overtime_entries))
-                    with col2:
-                        st.metric("Total Hours", f"{total_hours:.1f}")
-                    with col3:
-                        avg_hours = total_hours / len(overtime_entries) if overtime_entries else 0
-                        st.metric("Avg Hours/Day", f"{avg_hours:.1f}")
+                        week_start = request.get("week_start", "")
+                        week_end = request.get("week_end", "")
+                        st.write(f"**Week:** {week_start} to {week_end}")
                     
-                    # Show entry details
-                    st.markdown("**Overtime Entries:**")
-                    for entry in overtime_entries:
-                        entry_date = datetime.strptime(entry["date"], "%Y-%m-%d")
-                        st.write(f"• **{entry_date.strftime('%A, %d %B')}:** {entry['hours']} hours - {entry['description']}")
-                
-                # Submit button
-                submit_overtime = st.form_submit_button("🚀 Submit Overtime Request", type="primary")
-                
-                if submit_overtime:
-                    if not overtime_entries:
-                        st.error("❌ Please enter overtime hours for at least one day")
-                    elif not overall_reason.strip():
-                        st.error("❌ Please provide an overall reason for overtime")
-                    else:
-                        # Prepare overtime data
-                        overtime_data = {
-                            "week_start": week_start.strftime("%Y-%m-%d"),
-                            "week_end": week_end.strftime("%Y-%m-%d"),
-                            "overtime_entries": overtime_entries,
-                            "total_hours": total_hours,
-                            "reason": overall_reason.strip()
-                        }
-                        
-                        # Submit overtime request
-                        result = submit_overtime_request(employee_id, overtime_data)
-                        
-                        if result["success"]:
-                            st.success(f"✅ {result['message']}")
-                            st.balloons()
-                            st.info("Your overtime request has been sent to your supervisor for approval.")
-                            
-                            # Clear form by rerunning
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {result['message']}")
+                    with col2:
+                        st.write(f"**{request.get('total_hours', 0):.1f}h**")
+                    
+                    with col3:
+                        st.write(f"{status_icon} {status.title()}")
+                    
+                    st.caption(f"Submitted: {datetime.fromtimestamp(request.get('submitted_at').timestamp()).strftime('%d %b %Y') if hasattr(request.get('submitted_at', 0), 'timestamp') else 'Unknown'}")
+                    st.divider()
 
 with tab2:
     st.subheader("📊 My Overtime Balance")
@@ -578,36 +635,6 @@ with tab4:
             # Detailed table
             st.markdown("### 📋 Monthly Details")
             st.dataframe(df_monthly, use_container_width=True, hide_index=True)
-        
-        # Top overtime days
-        st.markdown("### 🏆 Most Productive Overtime Days")
-        
-        day_stats = {}
-        for request in approved_requests:
-            for entry in request.get("overtime_entries", []):
-                entry_date = datetime.strptime(entry["date"], "%Y-%m-%d")
-                day_name = entry_date.strftime("%A")
-                
-                if day_name not in day_stats:
-                    day_stats[day_name] = {"hours": 0, "count": 0}
-                
-                day_stats[day_name]["hours"] += entry["hours"]
-                day_stats[day_name]["count"] += 1
-        
-        if day_stats:
-            day_chart_data = []
-            for day, stats in day_stats.items():
-                day_chart_data.append({
-                    "Day": day,
-                    "Total Hours": stats["hours"],
-                    "Sessions": stats["count"],
-                    "Avg Hours": stats["hours"] / stats["count"]
-                })
-            
-            df_days = pd.DataFrame(day_chart_data)
-            df_days = df_days.sort_values("Total Hours", ascending=False)
-            
-            st.dataframe(df_days, use_container_width=True, hide_index=True)
 
 # Footer with navigation
 st.markdown("---")
@@ -631,17 +658,17 @@ st.sidebar.markdown("### ⏰ Overtime Guidelines")
 
 st.sidebar.markdown("""
 **Overtime Rules:**
-- ✅ Only weekends and holidays
+- ✅ Select any date to enter overtime
 - ✅ Maximum 12 hours per day
-- ✅ Submit weekly (Mon-Sun)
 - ✅ Detailed descriptions required
 - ✅ Supervisor approval needed
 
 **Submission Tips:**
-- Submit by end of following week
+- Add each overtime day individually
 - Be specific in descriptions
 - Include project/task context
 - Check balance regularly
+- Submit multiple days together
 """)
 
 st.sidebar.markdown("### 📊 Quick Stats")

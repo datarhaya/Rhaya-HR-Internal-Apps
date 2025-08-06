@@ -1,4 +1,4 @@
-# pages/overtime_approval.py - Complete version
+# pages/overtime_approval.py - Enhanced with individual selection and dialog details
 import streamlit as st
 from datetime import datetime, date, timedelta
 import utils.database as db
@@ -37,6 +37,197 @@ if access_level not in [1, 2, 3]:
         st.switch_page("pages/dashboard.py")
     st.stop()
 
+# Initialize session state for selections and dialogs
+if "selected_requests" not in st.session_state:
+    st.session_state.selected_requests = set()
+
+if "show_employee_dialog" not in st.session_state:
+    st.session_state.show_employee_dialog = False
+
+if "dialog_employee_id" not in st.session_state:
+    st.session_state.dialog_employee_id = None
+
+if "show_request_dialog" not in st.session_state:
+    st.session_state.show_request_dialog = False
+
+if "dialog_request" not in st.session_state:
+    st.session_state.dialog_request = None
+
+@st.dialog("Request Details")
+def show_request_details():
+    if st.session_state.dialog_request:
+        request = st.session_state.dialog_request
+        
+        st.markdown(f"### ⏰ {request.get('employee_name', 'Unknown')}")
+        
+        # Basic info
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write(f"**📧 Email:** {request.get('employee_email', 'N/A')}")
+            st.write(f"**🏢 Division:** {request.get('employee_division', 'Unknown')}")
+            st.write(f"**💼 Role:** {request.get('employee_role', 'Unknown')}")
+        
+        with col2:
+            week_start = request.get('week_start', '')
+            week_end = request.get('week_end', '')
+            st.write(f"**📅 Period:** {week_start} to {week_end}")
+            st.write(f"**⏰ Total Hours:** {request.get('total_hours', 0):.1f}h")
+            
+            submitted_date = request.get('submitted_at')
+            if hasattr(submitted_date, 'timestamp'):
+                submitted_str = datetime.fromtimestamp(submitted_date.timestamp()).strftime('%d %B %Y, %H:%M')
+                st.write(f"**📤 Submitted:** {submitted_str}")
+        
+        st.markdown("---")
+        
+        # Overtime entries
+        st.markdown("**📋 Overtime Details:**")
+        
+        for entry in request.get('overtime_entries', []):
+            entry_date = datetime.strptime(entry['date'], '%Y-%m-%d')
+            day_name = entry_date.strftime('%A')
+            date_str = entry_date.strftime('%d %B')
+            
+            with st.container():
+                col_date, col_hours, col_desc = st.columns([1, 1, 3])
+                
+                with col_date:
+                    st.write(f"**{day_name}**")
+                    st.caption(date_str)
+                
+                with col_hours:
+                    st.write(f"**{entry['hours']}h**")
+                
+                with col_desc:
+                    st.write(entry['description'])
+        
+        # Overall reason
+        if request.get('reason'):
+            st.markdown("**💭 Overall Reason:**")
+            st.write(request['reason'])
+        
+        st.markdown("---")
+        
+        # Quick actions in dialog
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("✅ Quick Approve", type="primary"):
+                result = approve_overtime_request(request['id'], employee_id, "Approved from dialog")
+                if result['success']:
+                    st.success("✅ Approved!")
+                    st.session_state.show_request_dialog = False
+                    st.session_state.dialog_request = None
+                    st.rerun()
+                else:
+                    st.error(result['message'])
+        
+        with col2:
+            if st.button("❌ Quick Reject"):
+                st.session_state.show_reject_reason = True
+        
+        with col3:
+            if st.button("🔍 Employee Details"):
+                st.session_state.dialog_employee_id = request.get('employee_id')
+                st.session_state.show_employee_dialog = True
+                st.session_state.show_request_dialog = False
+                st.rerun()
+        
+        # Handle reject reason
+        if st.session_state.get("show_reject_reason"):
+            reject_reason = st.text_area("Rejection reason:", placeholder="Provide reason for rejection")
+            
+            col_confirm, col_cancel = st.columns(2)
+            with col_confirm:
+                if st.button("Confirm Reject"):
+                    if reject_reason.strip():
+                        result = reject_overtime_request(request['id'], employee_id, reject_reason)
+                        if result['success']:
+                            st.success("❌ Rejected!")
+                            st.session_state.show_request_dialog = False
+                            st.session_state.dialog_request = None
+                            st.session_state.show_reject_reason = False
+                            st.rerun()
+                        else:
+                            st.error(result['message'])
+                    else:
+                        st.error("Please provide a reason")
+            
+            with col_cancel:
+                if st.button("Cancel"):
+                    st.session_state.show_reject_reason = False
+                    st.rerun()
+    
+    if st.button("Close", type="secondary"):
+        st.session_state.show_request_dialog = False
+        st.session_state.dialog_request = None
+        if "show_reject_reason" in st.session_state:
+            del st.session_state.show_reject_reason
+        st.rerun()
+
+@st.dialog("Employee Details")
+def show_employee_details():
+    if st.session_state.dialog_employee_id:
+        try:
+            # Get employee data
+            employee_data = db.db.collection("users_db").document(st.session_state.dialog_employee_id).get().to_dict()
+            
+            if employee_data:
+                st.markdown(f"### 👤 {employee_data.get('name', 'Unknown')}")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write(f"**📧 Email:** {employee_data.get('email', 'N/A')}")
+                    st.write(f"**🏢 Division:** {employee_data.get('division_name', 'Unknown')}")
+                    st.write(f"**💼 Role:** {employee_data.get('role_name', 'Unknown')}")
+                    st.write(f"**🔑 Access Level:** {employee_data.get('access_level', 4)}")
+                
+                with col2:
+                    # Get overtime balance
+                    current_month = datetime.now().strftime("%Y-%m")
+                    balance = get_employee_overtime_balance(st.session_state.dialog_employee_id, current_month)
+                    
+                    if balance:
+                        st.write(f"**⏰ Approved Hours:** {balance.get('approved_hours', 0):.1f}h")
+                        st.write(f"**💰 Balance Hours:** {balance.get('balance_hours', 0):.1f}h")
+                        st.write(f"**💵 Paid Hours:** {balance.get('paid_hours', 0):.1f}h")
+                        
+                        # Estimated pay
+                        overtime_rate = employee_data.get('overtime_rate', 0)
+                        if overtime_rate > 0:
+                            estimated_pay = balance.get('balance_hours', 0) * overtime_rate
+                            st.write(f"**💲 Est. Pay:** ${estimated_pay:.2f}")
+                    else:
+                        st.write("**⏰ Balance:** No data this month")
+                
+                # Additional info
+                join_date = employee_data.get('start_joining_date')
+                if join_date and hasattr(join_date, 'timestamp'):
+                    join_str = datetime.fromtimestamp(join_date.timestamp()).strftime('%d %B %Y')
+                    st.write(f"**📅 Joined:** {join_str}")
+                
+                # Supervisor info
+                supervisor_id = employee_data.get("direct_supervisor_id")
+                if supervisor_id:
+                    try:
+                        supervisor_data = db.db.collection("users_db").document(supervisor_id).get().to_dict()
+                        if supervisor_data:
+                            st.write(f"**👥 Supervisor:** {supervisor_data.get('name', 'Unknown')}")
+                    except:
+                        pass
+            else:
+                st.error("Employee data not found")
+        
+        except Exception as e:
+            st.error(f"Error loading employee details: {e}")
+    
+    if st.button("Close", type="primary"):
+        st.session_state.show_employee_dialog = False
+        st.session_state.dialog_employee_id = None
+        st.rerun()
+
 # Page header
 st.title("⏰ Overtime Request Approval")
 st.markdown(f"**Approver:** {user_data.get('name')} | **Role:** {user_data.get('role_name')}")
@@ -69,6 +260,13 @@ with col2:
 
 st.divider()
 
+# Show dialogs
+if st.session_state.show_request_dialog:
+    show_request_details()
+
+if st.session_state.show_employee_dialog:
+    show_employee_details()
+
 # Create different tabs based on access level
 if access_level == 1:  # Admin gets additional tabs
     tab1, tab2, tab3, tab4 = st.tabs([
@@ -93,44 +291,221 @@ with tab1:
         st.markdown(f"### 📋 Pending Approvals ({len(pending_approvals)})")
         st.warning(f"⚠️ You have **{len(pending_approvals)}** overtime request(s) awaiting your approval.")
 
-        # Process each pending request
-        for i, request in enumerate(pending_approvals):
-            with st.container():
-                # Request header
-                col_header1, col_header2 = st.columns([3, 1])
+        # Bulk actions section - Available for both supervisors and admin
+        if len(pending_approvals) > 1 and access_level in [1, 2, 3]:
+            st.markdown("### ⚡ Bulk Actions")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                if st.button("☑️ Select All"):
+                    st.session_state.selected_requests = {req["id"] for req in pending_approvals}
+                    st.rerun()
+            
+            with col2:
+                if st.button("☐ Clear Selection"):
+                    st.session_state.selected_requests.clear()
+                    st.rerun()
+            
+            with col3:
+                selected_count = len(st.session_state.selected_requests)
+                if selected_count > 0:
+                    if st.button(f"✅ Approve Selected ({selected_count})"):
+                        st.session_state.bulk_approve_selected = True
+            
+            with col4:
+                if selected_count > 0:
+                    if st.button(f"❌ Reject Selected ({selected_count})"):
+                        st.session_state.bulk_reject_selected = True
+            
+            # Handle bulk approve selected
+            if st.session_state.get("bulk_approve_selected"):
+                st.warning("⚠️ **CONFIRM BULK APPROVAL**")
+                selected_requests = [req for req in pending_approvals if req["id"] in st.session_state.selected_requests]
+                total_hours = sum(req.get("total_hours", 0) for req in selected_requests)
+                
+                st.write(f"Approve {len(selected_requests)} requests totaling {total_hours:.1f} hours?")
+                
+                bulk_comments = st.text_area("Bulk approval comments:", key="bulk_approve_comments")
+                
+                col_yes, col_no = st.columns(2)
+                with col_yes:
+                    if st.button("✅ Confirm Bulk Approve"):
+                        approved_count = 0
+                        for req_id in st.session_state.selected_requests:
+                            result = approve_overtime_request(req_id, employee_id, bulk_comments or "Bulk approved")
+                            if result["success"]:
+                                approved_count += 1
+                        
+                        st.success(f"✅ Bulk approved {approved_count} requests")
+                        st.session_state.bulk_approve_selected = False
+                        st.session_state.selected_requests.clear()
+                        st.rerun()
+                
+                with col_no:
+                    if st.button("❌ Cancel"):
+                        st.session_state.bulk_approve_selected = False
+                        st.rerun()
+            
+            # Handle bulk reject selected
+            if st.session_state.get("bulk_reject_selected"):
+                st.warning("⚠️ **CONFIRM BULK REJECTION**")
+                selected_requests = [req for req in pending_approvals if req["id"] in st.session_state.selected_requests]
+                
+                st.write(f"Reject {len(selected_requests)} selected requests?")
+                
+                bulk_comments = st.text_area("Bulk rejection reason:", key="bulk_reject_comments", help="Required for rejection")
+                
+                if bulk_comments.strip():
+                    col_yes, col_no = st.columns(2)
+                    with col_yes:
+                        if st.button("❌ Confirm Bulk Reject"):
+                            rejected_count = 0
+                            for req_id in st.session_state.selected_requests:
+                                result = reject_overtime_request(req_id, employee_id, bulk_comments)
+                                if result["success"]:
+                                    rejected_count += 1
+                            
+                            st.success(f"✅ Bulk rejected {rejected_count} requests")
+                            st.session_state.bulk_reject_selected = False
+                            st.session_state.selected_requests.clear()
+                            st.rerun()
+                    
+                    with col_no:
+                        if st.button("❌ Cancel"):
+                            st.session_state.bulk_reject_selected = False
+                            st.rerun()
+                else:
+                    st.error("Please provide a reason for bulk rejection")
+            
+            st.markdown("---")
+
+        # Individual requests - Simplified table format for supervisors
+        if access_level in [2, 3]:  # Supervisor view - simplified table
+            st.markdown("### 📋 Requests Overview")
+            
+            # Create table data
+            table_data = []
+            for request in pending_approvals:
+                # Format overtime dates
+                entries = request.get('overtime_entries', [])
+                if entries:
+                    dates = []
+                    for entry in entries:
+                        entry_date = datetime.strptime(entry['date'], '%Y-%m-%d')
+                        dates.append(entry_date.strftime('%d %b'))
+                    date_range = f"{min(dates)} - {max(dates)}" if len(dates) > 1 else dates[0] if dates else "N/A"
+                else:
+                    date_range = "N/A"
+                
+                # Format submitted date
+                submitted_date = request.get('submitted_at')
+                if hasattr(submitted_date, 'timestamp'):
+                    submitted_str = datetime.fromtimestamp(submitted_date.timestamp()).strftime('%d %b %Y')
+                else:
+                    submitted_str = 'Unknown'
+                
+                table_data.append({
+                    "employee_name": request.get('employee_name', 'Unknown'),
+                    "overtime_dates": date_range,
+                    "total_hours": request.get('total_hours', 0),
+                    "submitted_on": submitted_str,
+                    "status": "🕐 Pending",
+                    "request_id": request["id"],
+                    "employee_id": request.get('employee_id')
+                })
+            
+            # Display as interactive table
+            for i, row in enumerate(table_data):
+                with st.container():
+                    col1, col2, col3, col4, col5, col6, col7 = st.columns([0.3, 2, 1.5, 1, 1, 1, 1])
+                    
+                    with col1:
+                        is_selected = st.checkbox(
+                            "",
+                            value=row["request_id"] in st.session_state.selected_requests,
+                            key=f"select_table_{row['request_id']}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        if is_selected and row["request_id"] not in st.session_state.selected_requests:
+                            st.session_state.selected_requests.add(row["request_id"])
+                            st.rerun()
+                        elif not is_selected and row["request_id"] in st.session_state.selected_requests:
+                            st.session_state.selected_requests.discard(row["request_id"])
+                            st.rerun()
+                    
+                    with col2:
+                        st.write(f"**{row['employee_name']}**")
+                    
+                    with col3:
+                        st.write(row['overtime_dates'])
+                    
+                    with col4:
+                        st.write(f"**{row['total_hours']:.1f}h**")
+                    
+                    with col5:
+                        st.write(row['submitted_on'])
+                    
+                    with col6:
+                        st.write(row['status'])
+                    
+                    with col7:
+                        if st.button("🔍 Detail", key=f"detail_table_{row['request_id']}"):
+                            # Store request details for dialog
+                            request_detail = next(req for req in pending_approvals if req["id"] == row["request_id"])
+                            st.session_state.dialog_request = request_detail
+                            st.session_state.show_request_dialog = True
+                            st.rerun()
+                    
+                    st.divider()
+        
+        else:  # Admin view - detailed cards
+            # Individual requests with checkboxes for admin
+            for i, request in enumerate(pending_approvals):
+                with st.container():
+                    # Checkbox and header
+                    col_check, col_header1, col_header2 = st.columns([0.5, 2.5, 1])
+                    
+                    with col_check:
+                        is_selected = st.checkbox(
+                            "",
+                            value=request["id"] in st.session_state.selected_requests,
+                            key=f"select_{request['id']}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        if is_selected and request["id"] not in st.session_state.selected_requests:
+                            st.session_state.selected_requests.add(request["id"])
+                            st.rerun()
+                        elif not is_selected and request["id"] in st.session_state.selected_requests:
+                            st.session_state.selected_requests.discard(request["id"])
+                            st.rerun()
                 
                 with col_header1:
                     week_start = request.get('week_start', '')
                     week_end = request.get('week_end', '')
-                    st.markdown(f"#### ⏰ Request #{i+1} - {request.get('employee_name', 'Unknown')}")
+                    st.markdown(f"#### ⏰ {request.get('employee_name', 'Unknown')}")
                     st.markdown(f"**Week:** {week_start} to {week_end}")
                 
                 with col_header2:
-                    # Show total hours prominently
                     total_hours = request.get('total_hours', 0)
                     st.metric("Total Hours", f"{total_hours:.1f}h")
 
-                # Employee and request info
+                # Basic info and detail button
                 col1, col2, col3 = st.columns([2, 1, 1])
                 
                 with col1:
                     st.markdown(f"**👤 Employee:** {request.get('employee_name', 'Unknown')}")
-                    st.markdown(f"**📧 Email:** {request.get('employee_email', 'N/A')}")
-                    st.markdown(f"**🏢 Division:** {request.get('employee_division', 'Unknown')}")
-                    st.markdown(f"**💼 Role:** {request.get('employee_role', 'Unknown')}")
+                    st.markdown(f"**📅 Days:** {len(request.get('overtime_entries', []))}")
+                    
+                    # Show employee details button
+                    if st.button(f"🔍 View Details", key=f"details_{request['id']}"):
+                        st.session_state.dialog_employee_id = request.get('employee_id')
+                        st.session_state.show_employee_dialog = True
+                        st.rerun()
                 
                 with col2:
-                    st.markdown(f"**📅 Days:** {len(request.get('overtime_entries', []))}")
-                    st.markdown(f"**⏰ Hours:** {total_hours:.1f}")
-                    
-                    # Show employee's current balance
-                    current_month = datetime.now().strftime("%Y-%m")
-                    employee_balance = get_employee_overtime_balance(request.get('employee_id'), current_month)
-                    if employee_balance:
-                        balance_hours = employee_balance.get('balance_hours', 0)
-                        st.markdown(f"**💰 Current Balance:** {balance_hours:.1f}h")
-                
-                with col3:
                     submitted_date = request.get('submitted_at')
                     if hasattr(submitted_date, 'timestamp'):
                         submitted_str = datetime.fromtimestamp(submitted_date.timestamp()).strftime('%d %b %Y')
@@ -138,24 +513,74 @@ with tab1:
                         submitted_str = 'Unknown'
                     st.markdown(f"**📤 Submitted:** {submitted_str}")
                     st.markdown(f"**⏰ Status:** 🕐 Pending")
+                
+                with col3:
+                    st.markdown("**🎯 Quick Actions:**")
+                    
+                    col_quick1, col_quick2 = st.columns(2)
+                    
+                    with col_quick1:
+                        if st.button("✅", key=f"quick_approve_{request['id']}", help="Quick Approve"):
+                            result = approve_overtime_request(request['id'], employee_id, "Quick approved")
+                            if result['success']:
+                                st.success("✅ Approved!")
+                                st.rerun()
+                            else:
+                                st.error(result['message'])
+                    
+                    with col_quick2:
+                        if st.button("❌", key=f"quick_reject_{request['id']}", help="Quick Reject"):
+                            if f"quick_reject_reason_{request['id']}" not in st.session_state:
+                                st.session_state[f"quick_reject_reason_{request['id']}"] = True
+                                st.rerun()
 
-                # Overtime entries details
-                st.markdown("**📋 Overtime Details:**")
+                # Quick reject reason
+                if st.session_state.get(f"quick_reject_reason_{request['id']}"):
+                    quick_reason = st.text_input(
+                        "Rejection reason:",
+                        key=f"reason_{request['id']}",
+                        placeholder="Provide reason for rejection"
+                    )
+                    
+                    col_confirm, col_cancel = st.columns(2)
+                    with col_confirm:
+                        if st.button("Confirm Reject", key=f"confirm_reject_{request['id']}"):
+                            if quick_reason.strip():
+                                result = reject_overtime_request(request['id'], employee_id, quick_reason)
+                                if result['success']:
+                                    st.success("❌ Rejected!")
+                                    del st.session_state[f"quick_reject_reason_{request['id']}"]
+                                    st.rerun()
+                                else:
+                                    st.error(result['message'])
+                            else:
+                                st.error("Please provide a reason")
+                    
+                    with col_cancel:
+                        if st.button("Cancel", key=f"cancel_reject_{request['id']}"):
+                            del st.session_state[f"quick_reject_reason_{request['id']}"]
+                            st.rerun()
+
+                # Overtime entries in clean format
+                st.markdown("**📋 Overtime Entries:**")
                 
                 for entry in request.get('overtime_entries', []):
                     entry_date = datetime.strptime(entry['date'], '%Y-%m-%d')
                     day_name = entry_date.strftime('%A')
                     date_str = entry_date.strftime('%d %b')
                     
-                    with st.expander(f"{day_name}, {date_str} - {entry['hours']}h"):
-                        st.write(f"**Hours:** {entry['hours']}")
-                        st.write(f"**Description:** {entry['description']}")
+                    with st.container():
+                        col_date, col_hours, col_desc = st.columns([1, 1, 3])
                         
-                        # Validate it's weekend
-                        if entry_date.weekday() in [5, 6]:  # Saturday or Sunday
-                            st.success("✅ Valid overtime day (Weekend)")
-                        else:
-                            st.warning("⚠️ Not a weekend - may be holiday")
+                        with col_date:
+                            st.write(f"**{day_name}**")
+                            st.caption(date_str)
+                        
+                        with col_hours:
+                            st.write(f"**{entry['hours']}h**")
+                        
+                        with col_desc:
+                            st.write(entry['description'])
 
                 # Overall reason
                 if request.get('reason'):
@@ -164,92 +589,58 @@ with tab1:
 
                 st.markdown("---")
                 
-                # Approval actions
-                st.markdown("**🎯 Action Required:**")
-                
-                # Create unique keys for each request
-                approve_key = f"approve_ot_{request['id']}"
-                reject_key = f"reject_ot_{request['id']}"
-                comments_key = f"comments_ot_{request['id']}"
-                
-                # Comments field
-                approval_comments = st.text_area(
-                    "💬 Comments (Optional)",
-                    key=comments_key,
-                    placeholder="Add any comments for the employee...",
-                    help="Comments will be visible to the employee",
-                    max_chars=500
-                )
-                
-                # Action buttons
-                col_approve, col_reject, col_info = st.columns([1, 1, 2])
-                
-                with col_approve:
-                    if st.button(f"✅ Approve", key=approve_key, type="primary", use_container_width=True):
-                        if f"confirm_approve_ot_{request['id']}" not in st.session_state:
-                            st.session_state[f"confirm_approve_ot_{request['id']}"] = True
-                            st.rerun()
-                
-                with col_reject:
-                    if st.button(f"❌ Reject", key=reject_key, type="secondary", use_container_width=True):
-                        if f"confirm_reject_ot_{request['id']}" not in st.session_state:
-                            st.session_state[f"confirm_reject_ot_{request['id']}"] = True
-                            st.rerun()
-                
-                with col_info:
-                    st.info(f"💡 {total_hours:.1f}h @ overtime rate")
-
-                # Handle approval confirmation
-                if st.session_state.get(f"confirm_approve_ot_{request['id']}"):
-                    st.warning("⚠️ **CONFIRM APPROVAL**")
-                    st.write(f"Approve {total_hours:.1f} hours of overtime for {request.get('employee_name')}?")
+                # Detailed approval actions
+                with st.expander(f"⚙️ Detailed Actions - {request.get('employee_name')}"):
+                    # Create unique keys for each request
+                    approve_key = f"approve_ot_{request['id']}"
+                    reject_key = f"reject_ot_{request['id']}"
+                    comments_key = f"comments_ot_{request['id']}"
                     
-                    col_yes, col_no = st.columns(2)
+                    # Comments field
+                    approval_comments = st.text_area(
+                        "💬 Comments (Optional)",
+                        key=comments_key,
+                        placeholder="Add any comments for the employee...",
+                        help="Comments will be visible to the employee",
+                        max_chars=500
+                    )
                     
-                    with col_yes:
-                        if st.button(f"🟢 Yes, Approve", key=f"yes_approve_ot_{request['id']}", type="primary"):
-                            result = approve_overtime_request(request['id'], employee_id, approval_comments)
-                            
-                            if result['success']:
-                                st.success(f"✅ {result['message']}")
-                                st.balloons()
-                                
-                                # Clear confirmation state
-                                if f"confirm_approve_ot_{request['id']}" in st.session_state:
-                                    del st.session_state[f"confirm_approve_ot_{request['id']}"]
-                                
-                                import time
-                                time.sleep(1)
+                    # Action buttons
+                    col_approve, col_reject, col_info = st.columns([1, 1, 2])
+                    
+                    with col_approve:
+                        if st.button(f"✅ Approve", key=approve_key, type="primary", use_container_width=True):
+                            if f"confirm_approve_ot_{request['id']}" not in st.session_state:
+                                st.session_state[f"confirm_approve_ot_{request['id']}"] = True
                                 st.rerun()
-                            else:
-                                st.error(f"❌ {result['message']}")
                     
-                    with col_no:
-                        if st.button(f"🔴 Cancel", key=f"cancel_approve_ot_{request['id']}"):
-                            if f"confirm_approve_ot_{request['id']}" in st.session_state:
-                                del st.session_state[f"confirm_approve_ot_{request['id']}"]
-                            st.rerun()
+                    with col_reject:
+                        if st.button(f"❌ Reject", key=reject_key, type="secondary", use_container_width=True):
+                            if f"confirm_reject_ot_{request['id']}" not in st.session_state:
+                                st.session_state[f"confirm_reject_ot_{request['id']}"] = True
+                                st.rerun()
+                    
+                    with col_info:
+                        st.info(f"💡 {total_hours:.1f}h @ overtime rate")
 
-                # Handle rejection confirmation
-                if st.session_state.get(f"confirm_reject_ot_{request['id']}"):
-                    st.warning("⚠️ **CONFIRM REJECTION**")
-                    st.write(f"Reject overtime request from {request.get('employee_name')}?")
-                    
-                    # Require comments for rejection
-                    if not approval_comments.strip():
-                        st.error("📝 Please provide a reason for rejection in the comments field above.")
-                    else:
+                    # Handle approval confirmation
+                    if st.session_state.get(f"confirm_approve_ot_{request['id']}"):
+                        st.warning("⚠️ **CONFIRM APPROVAL**")
+                        st.write(f"Approve {total_hours:.1f} hours of overtime for {request.get('employee_name')}?")
+                        
                         col_yes, col_no = st.columns(2)
                         
                         with col_yes:
-                            if st.button(f"🔴 Yes, Reject", key=f"yes_reject_ot_{request['id']}", type="secondary"):
-                                result = reject_overtime_request(request['id'], employee_id, approval_comments)
+                            if st.button(f"🟢 Yes, Approve", key=f"yes_approve_ot_{request['id']}", type="primary"):
+                                result = approve_overtime_request(request['id'], employee_id, approval_comments)
                                 
                                 if result['success']:
                                     st.success(f"✅ {result['message']}")
+                                    st.balloons()
                                     
-                                    if f"confirm_reject_ot_{request['id']}" in st.session_state:
-                                        del st.session_state[f"confirm_reject_ot_{request['id']}"]
+                                    # Clear confirmation state
+                                    if f"confirm_approve_ot_{request['id']}" in st.session_state:
+                                        del st.session_state[f"confirm_approve_ot_{request['id']}"]
                                     
                                     import time
                                     time.sleep(1)
@@ -258,10 +649,43 @@ with tab1:
                                     st.error(f"❌ {result['message']}")
                         
                         with col_no:
-                            if st.button(f"🟢 Cancel", key=f"cancel_reject_ot_{request['id']}"):
-                                if f"confirm_reject_ot_{request['id']}" in st.session_state:
-                                    del st.session_state[f"confirm_reject_ot_{request['id']}"]
+                            if st.button(f"🔴 Cancel", key=f"cancel_approve_ot_{request['id']}"):
+                                if f"confirm_approve_ot_{request['id']}" in st.session_state:
+                                    del st.session_state[f"confirm_approve_ot_{request['id']}"]
                                 st.rerun()
+
+                    # Handle rejection confirmation
+                    if st.session_state.get(f"confirm_reject_ot_{request['id']}"):
+                        st.warning("⚠️ **CONFIRM REJECTION**")
+                        st.write(f"Reject overtime request from {request.get('employee_name')}?")
+                        
+                        # Require comments for rejection
+                        if not approval_comments.strip():
+                            st.error("📝 Please provide a reason for rejection in the comments field above.")
+                        else:
+                            col_yes, col_no = st.columns(2)
+                            
+                            with col_yes:
+                                if st.button(f"🔴 Yes, Reject", key=f"yes_reject_ot_{request['id']}", type="secondary"):
+                                    result = reject_overtime_request(request['id'], employee_id, approval_comments)
+                                    
+                                    if result['success']:
+                                        st.success(f"✅ {result['message']}")
+                                        
+                                        if f"confirm_reject_ot_{request['id']}" in st.session_state:
+                                            del st.session_state[f"confirm_reject_ot_{request['id']}"]
+                                        
+                                        import time
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ {result['message']}")
+                            
+                            with col_no:
+                                if st.button(f"🟢 Cancel", key=f"cancel_reject_ot_{request['id']}"):
+                                    if f"confirm_reject_ot_{request['id']}" in st.session_state:
+                                        del st.session_state[f"confirm_reject_ot_{request['id']}"]
+                                    st.rerun()
                 
                 st.markdown("---")
                 st.markdown("")  # Space between requests
@@ -361,7 +785,7 @@ if access_level == 1:
                         if st.button("❌ Bulk Reject All Pending", type="secondary"):
                             st.session_state.bulk_reject_overtime = True
                     
-                    # Handle bulk actions
+                    # Handle bulk actions (same as before)
                     if st.session_state.get("bulk_approve_overtime"):
                         st.warning("⚠️ **CONFIRM BULK APPROVAL**")
                         bulk_comments = st.text_area("Bulk approval comments:", key="bulk_approve_comments")
@@ -778,7 +1202,6 @@ st.sidebar.markdown("### ⏰ Overtime Guidelines")
 
 st.sidebar.markdown("""
 **Approval Criteria:**
-- ✅ Only weekends & holidays
 - ✅ Valid business justification
 - ✅ Reasonable hours (max 12h/day)
 - ✅ Detailed work descriptions
@@ -786,10 +1209,14 @@ st.sidebar.markdown("""
 
 **Before Approving:**
 - Check employee's current balance
-- Verify overtime dates are valid
 - Review work descriptions
 - Consider team workload
 - Confirm budget availability
+
+**Quick Actions:**
+- Use checkboxes for bulk actions
+- Click 🔍 View Details for employee info
+- Use ✅/❌ for quick approve/reject
 """)
 
 if access_level == 1:
@@ -803,8 +1230,13 @@ if access_level == 1:
 st.sidebar.markdown("### 📊 Quick Stats")
 
 # Show pending count in sidebar
+pending_approvals = get_pending_overtime_approvals_for_approver(employee_id) if employee_id else []
 if pending_approvals:
     st.sidebar.metric("Pending Approvals", len(pending_approvals))
+    
+    # Show selection count
+    if st.session_state.selected_requests:
+        st.sidebar.metric("Selected", len(st.session_state.selected_requests))
 else:
     st.sidebar.success("All caught up! ✅")
 
@@ -840,5 +1272,4 @@ if access_level == 1:
 else:
     st.caption("⏰ Enhanced Overtime Approval System | Team-based access")
 
-st.caption(f"Session: {user_data.get('name')} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")# pages/overtime_approval.py
-
+st.caption(f"Session: {user_data.get('name')} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
