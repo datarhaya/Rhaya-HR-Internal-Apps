@@ -466,7 +466,7 @@ with tab1:
                 with st.container():
                     # Checkbox and header
                     col_check, col_header1, col_header2 = st.columns([0.5, 2.5, 1])
-                    
+                
                     with col_check:
                         is_selected = st.checkbox(
                             "",
@@ -474,7 +474,7 @@ with tab1:
                             key=f"select_{request['id']}",
                             label_visibility="collapsed"
                         )
-                        
+                    
                         if is_selected and request["id"] not in st.session_state.selected_requests:
                             st.session_state.selected_requests.add(request["id"])
                             st.rerun()
@@ -754,6 +754,103 @@ if access_level == 1:
             if filtered_requests:
                 st.info(f"📊 Showing {len(filtered_requests)} of {len(all_overtime_requests)} requests")
                 
+                # Admin selection for all requests
+                if "selected_admin_requests" not in st.session_state:
+                    st.session_state.selected_admin_requests = set()
+                
+                # Bulk actions for admin on all requests
+                pending_requests = [r for r in filtered_requests if r.get("status") == "pending"]
+                if pending_requests:
+                    st.markdown("### ⚡ Admin Actions on Filtered Results")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        if st.button("☑️ Select All Filtered"):
+                            st.session_state.selected_admin_requests = {req["id"] for req in filtered_requests}
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("☐ Clear Selection"):
+                            st.session_state.selected_admin_requests.clear()
+                            st.rerun()
+                    
+                    with col3:
+                        selected_count = len(st.session_state.selected_admin_requests)
+                        if selected_count > 0:
+                            if st.button(f"✅ Approve Selected ({selected_count})"):
+                                st.session_state.bulk_approve_admin_requests = True
+                    
+                    with col4:
+                        if selected_count > 0:
+                            if st.button(f"❌ Reject Selected ({selected_count})"):
+                                st.session_state.bulk_reject_admin_requests = True
+                    
+                    # Handle bulk approve admin requests
+                    if st.session_state.get("bulk_approve_admin_requests"):
+                        st.warning("⚠️ **CONFIRM BULK APPROVAL (ADMIN OVERRIDE)**")
+                        selected_requests = [req for req in filtered_requests if req["id"] in st.session_state.selected_admin_requests]
+                        total_hours = sum(req.get("total_hours", 0) for req in selected_requests)
+                        
+                        st.write(f"Admin override approve {len(selected_requests)} requests totaling {total_hours:.1f} hours?")
+                        
+                        bulk_comments = st.text_area("Bulk approval comments:", key="bulk_approve_admin_comments")
+                        
+                        col_yes, col_no = st.columns(2)
+                        with col_yes:
+                            if st.button("✅ Confirm Admin Bulk Approve"):
+                                approved_count = 0
+                                for req_id in st.session_state.selected_admin_requests:
+                                    result = admin_override_overtime_request(
+                                        req_id, employee_id, "approve", 
+                                        bulk_comments or "Bulk approved by admin override"
+                                    )
+                                    if result["success"]:
+                                        approved_count += 1
+                                
+                                st.success(f"✅ Admin override approved {approved_count} requests")
+                                st.session_state.bulk_approve_admin_requests = False
+                                st.session_state.selected_admin_requests.clear()
+                                st.rerun()
+                        
+                        with col_no:
+                            if st.button("❌ Cancel"):
+                                st.session_state.bulk_approve_admin_requests = False
+                                st.rerun()
+                    
+                    # Handle bulk reject admin requests
+                    if st.session_state.get("bulk_reject_admin_requests"):
+                        st.warning("⚠️ **CONFIRM BULK REJECTION (ADMIN OVERRIDE)**")
+                        selected_requests = [req for req in filtered_requests if req["id"] in st.session_state.selected_admin_requests]
+                        
+                        st.write(f"Admin override reject {len(selected_requests)} selected requests?")
+                        
+                        bulk_comments = st.text_area("Bulk rejection reason:", key="bulk_reject_admin_comments", help="Required for rejection")
+                        
+                        if bulk_comments.strip():
+                            col_yes, col_no = st.columns(2)
+                            with col_yes:
+                                if st.button("❌ Confirm Admin Bulk Reject"):
+                                    rejected_count = 0
+                                    for req_id in st.session_state.selected_admin_requests:
+                                        result = admin_override_overtime_request(
+                                            req_id, employee_id, "reject", bulk_comments
+                                        )
+                                        if result["success"]:
+                                            rejected_count += 1
+                                    
+                                    st.success(f"✅ Admin override rejected {rejected_count} requests")
+                                    st.session_state.bulk_reject_admin_requests = False
+                                    st.session_state.selected_admin_requests.clear()
+                                    st.rerun()
+                            
+                            with col_no:
+                                if st.button("❌ Cancel"):
+                                    st.session_state.bulk_reject_admin_requests = False
+                                    st.rerun()
+                        else:
+                            st.error("Please provide a reason for bulk rejection")
+                
                 # Summary statistics
                 total_hours = sum([r.get("total_hours", 0) for r in filtered_requests])
                 approved_hours = sum([r.get("total_hours", 0) for r in filtered_requests if r.get("status") == "approved"])
@@ -770,9 +867,116 @@ if access_level == 1:
                 with col_stat4:
                     st.metric("Pending", pending_count)
                 
-                # Admin actions for pending requests
+                # Individual request display with checkboxes
+                st.markdown("### 📋 Individual Requests")
+                
+                for req in filtered_requests:
+                    with st.container():
+                        col_check, col_info, col_actions = st.columns([0.3, 3, 1])
+                        
+                        with col_check:
+                            is_selected = st.checkbox(
+                                "",
+                                value=req["id"] in st.session_state.selected_admin_requests,
+                                key=f"admin_select_{req['id']}",
+                                label_visibility="collapsed"
+                            )
+                            
+                            if is_selected and req["id"] not in st.session_state.selected_admin_requests:
+                                st.session_state.selected_admin_requests.add(req["id"])
+                                st.rerun()
+                            elif not is_selected and req["id"] in st.session_state.selected_admin_requests:
+                                st.session_state.selected_admin_requests.discard(req["id"])
+                                st.rerun()
+                        
+                        with col_info:
+                            # Basic request info
+                            col_emp, col_details, col_status = st.columns([1, 1, 1])
+                            
+                            with col_emp:
+                                st.write(f"**{req.get('employee_name', 'Unknown')}**")
+                                st.caption(f"{req.get('employee_division', 'Unknown')} - {req.get('employee_role', 'Unknown')}")
+                            
+                            with col_details:
+                                st.write(f"**Week:** {req.get('week_start')} to {req.get('week_end')}")
+                                st.write(f"**Hours:** {req.get('total_hours', 0):.1f}h")
+                            
+                            with col_status:
+                                status = req.get("status", "unknown")
+                                if status == "pending":
+                                    st.warning("🕐 Pending")
+                                elif status == "approved":
+                                    st.success("✅ Approved")
+                                elif status == "rejected":
+                                    st.error("❌ Rejected")
+                                
+                                submitted_date = req.get('submitted_at')
+                                if hasattr(submitted_date, 'timestamp'):
+                                    submitted_str = datetime.fromtimestamp(submitted_date.timestamp()).strftime('%d %b %Y')
+                                    st.caption(f"Submitted: {submitted_str}")
+                        
+                        with col_actions:
+                            if req.get("status") == "pending":
+                                col_quick1, col_quick2 = st.columns(2)
+                                
+                                with col_quick1:
+                                    if st.button("✅", key=f"admin_approve_{req['id']}", help="Admin Override Approve"):
+                                        result = admin_override_overtime_request(
+                                            req["id"], employee_id, "approve", 
+                                            "Admin override approval"
+                                        )
+                                        if result["success"]:
+                                            st.success("✅ Approved!")
+                                            st.rerun()
+                                        else:
+                                            st.error(result["message"])
+                                
+                                with col_quick2:
+                                    if st.button("❌", key=f"admin_reject_{req['id']}", help="Admin Override Reject"):
+                                        if f"admin_reject_reason_{req['id']}" not in st.session_state:
+                                            st.session_state[f"admin_reject_reason_{req['id']}"] = True
+                                            st.rerun()
+                            
+                            # Detail button for all requests
+                            if st.button("🔍", key=f"admin_detail_{req['id']}", help="View Details"):
+                                st.session_state.dialog_request = req
+                                st.session_state.show_request_dialog = True
+                                st.rerun()
+                        
+                        # Handle admin reject reason
+                        if st.session_state.get(f"admin_reject_reason_{req['id']}"):
+                            admin_reason = st.text_input(
+                                "Admin rejection reason:",
+                                key=f"admin_reason_{req['id']}",
+                                placeholder="Provide reason for admin override rejection"
+                            )
+                            
+                            col_confirm, col_cancel = st.columns(2)
+                            with col_confirm:
+                                if st.button("Confirm Admin Reject", key=f"confirm_admin_reject_{req['id']}"):
+                                    if admin_reason.strip():
+                                        result = admin_override_overtime_request(
+                                            req["id"], employee_id, "reject", admin_reason
+                                        )
+                                        if result["success"]:
+                                            st.success("❌ Admin Override Rejected!")
+                                            del st.session_state[f"admin_reject_reason_{req['id']}"]
+                                            st.rerun()
+                                        else:
+                                            st.error(result["message"])
+                                    else:
+                                        st.error("Please provide a reason")
+                            
+                            with col_cancel:
+                                if st.button("Cancel", key=f"cancel_admin_reject_{req['id']}"):
+                                    del st.session_state[f"admin_reject_reason_{req['id']}"]
+                                    st.rerun()
+                        
+                        st.divider()
+                
+                # Admin actions for pending requests (legacy bulk actions)
                 if pending_count > 0:
-                    st.markdown("### ⚡ Admin Override Actions")
+                    st.markdown("### ⚡ Legacy Admin Override Actions")
                     st.warning(f"You can override approval/rejection for {pending_count} pending requests")
                     
                     col_bulk1, col_bulk2 = st.columns(2)
