@@ -28,6 +28,7 @@ def get_all_auth():
     users_auth = db.collection("users_auth") # Dont forget to change db name after normalization
     return users_auth
 
+@st.cache_resource(ttl=300)  # Cache for 5 minutes
 def fetch_user_by_username(username):
     """
     Fetch a user's data from Firestore based on their username.

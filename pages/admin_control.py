@@ -36,6 +36,18 @@ if access_level != 1:
         st.switch_page("pages/dashboard.py")
     st.stop()
 
+# Navigation
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("← Back to Dashboard"):
+        st.switch_page("pages/dashboard.py")
+
+with col2:
+    if st.button("View Leave Approvals →"):
+        st.switch_page("pages/leave_approval.py")
+# st.markdown("---")
+
 def get_potential_supervisors():
     """Get all users who can be supervisors (access levels 1-3)"""
     try:
@@ -518,14 +530,3 @@ with tab4:
         if st.button("📊 Generate Reports", help="Generate system reports"):
             st.info("Advanced reporting features coming soon!")
 
-# Navigation
-st.markdown("---")
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("← Back to Dashboard"):
-        st.switch_page("pages/dashboard.py")
-
-with col2:
-    if st.button("View Leave Approvals →"):
-        st.switch_page("pages/leave_approval.py")

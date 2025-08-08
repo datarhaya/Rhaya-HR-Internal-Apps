@@ -12,8 +12,8 @@ from utils.leave_system_db import (
 
 # Check if user just logged out
 if check_logout_status():
-    st.success("You have been logged out successfully!")
-    st.info("Redirecting to login page...")
+    st.success("Anda Berhasil Log out dari akun Anda!")
+    st.info("Mengarahkan ke laman login...")
     # Automatic redirect without button
     import time
     time.sleep(1)
@@ -24,7 +24,7 @@ try:
     authenticator = check_authentication()
 except Exception as e:
     st.error(f"Authentication system error: {e}")
-    st.info("Please try refreshing the page or go to login.")
+    st.info("Coba refresh laman ini atau pergi ke laman login.")
     if st.button("Go to Login Page"):
         st.session_state.clear()
         st.switch_page("pages/login.py")
@@ -32,7 +32,7 @@ except Exception as e:
 
 # Use the logout handler's authentication check
 if not is_authenticated():
-    st.warning("You must log in first.")
+    st.warning("Anda harus masuk terlebih dahulu.")
     if st.button("Go to Login Page"):
         st.switch_page("pages/login.py")
     st.stop()
@@ -48,13 +48,13 @@ if "user_data" not in st.session_state and username:
         user_data = enrich_user_data(user_data)
         st.session_state.user_data = user_data
     else:
-        st.error("User not found.")
+        st.error("Pengguna tidak ditemukan. Jika menurut Anda ini adalah kesalahan, silakan hubungi tim IT (data@rhayaflicks.com)")
         st.switch_page("pages/login.py")
         st.stop()
 
 # Final check for user data
 if "user_data" not in st.session_state:
-    st.error("Session expired. Please log in again.")
+    st.error("Session expired. Silakan masuk lagi.")
     st.switch_page("pages/login.py")
     st.stop()
 
@@ -77,14 +77,14 @@ def service_duration(start_date):
     return f"{delta.days} days"
 
 # === UI Components ===
-st.subheader(f"Welcome, {user_data.get('name', 'Unknown')}!")
+st.subheader(f"Selamat datang, {user_data.get('name', 'Unknown')}!")
 
 # -- Handle Logout --
-if st.button("🚪 Logout", key="logout_main"):
+if st.sidebar.button("🚪 Logout", key="logout_main"):
     # Use logout handler
     handle_logout()
-    st.success("Logged out! Redirecting...")
-    
+    st.success("Anda Berhasil Log out dari akun Anda!")
+
     # Execute JavaScript cookie clearing
     st.markdown(clear_cookies_js(), unsafe_allow_html=True)
     
@@ -98,19 +98,19 @@ with col1:
 
 with col2:
     st.markdown(f"""
-        <div style="font-size: 0.75rem; color: gray;">Name</div>
+        <div style="font-size: 0.75rem; color: gray;">Nama</div>
         <div style="font-size: 1rem; margin-bottom: 4px;">{user_data['name']}</div>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 8px 0;" />
 
-        <div style="font-size: 0.75rem; color: gray;">Position</div>
-        <div style="font-size: 1rem; margin-bottom: 4px;">{user_data['role_name']} in {user_data['division_name']} division</div>
+        <div style="font-size: 0.75rem; color: gray;">Posisi</div>
+        <div style="font-size: 1rem; margin-bottom: 4px;">{user_data['role_name']} ({user_data['division_name']})</div>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 8px 0;" />
 
         <div style="font-size: 0.75rem; color: gray;">Email</div>
         <div style="font-size: 1rem; margin-bottom: 4px;">{user_data['email']}</div>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 8px 0;" />
 
-        <div style="font-size: 0.75rem; color: gray;">Joined On</div>
+        <div style="font-size: 0.75rem; color: gray;">Bergabung Sejak</div>
         <div style="font-size: 1rem; margin-bottom: 4px;">{format_date(user_data['start_joining_date'])} ({service_duration(user_data['start_joining_date'])})</div>
 
     """, unsafe_allow_html=True)
@@ -160,26 +160,31 @@ else:
 # -- Enhanced Navigation Sidebar --
 st.sidebar.title("🧭 Navigation")
 
+# Add to sidebar navigation
+st.sidebar.markdown("### 🔐 Akun")
+if st.sidebar.button("🔑 Ubah Kata Sandi"):
+    st.switch_page("pages/password_management.py")
+
 # Leave Management Section
-st.sidebar.markdown("### 📋 Leave Management")
-if st.sidebar.button("📝 Request Leave"):
+st.sidebar.markdown("### 📋 Cuti")
+if st.sidebar.button("📝 Ajukan Cuti"):
     st.switch_page("pages/leave_request.py")
 
 if access_level in [1, 2, 3]:
-    if st.sidebar.button("✅ Approve Leave"):
+    if st.sidebar.button("✅ Persetujuan Cuti"):
         st.switch_page("pages/leave_approval.py")
 
 if access_level == 1:
-    if st.sidebar.button("⚙️ Leave Admin"):
+    if st.sidebar.button("⚙️ Cuti Admin Control"):
         st.switch_page("pages/admin_leave_control.py")
 
 # NEW: Overtime Management Section
-st.sidebar.markdown("### ⏰ Overtime Management")
-if st.sidebar.button("⏰ Submit Overtime"):
+st.sidebar.markdown("### ⏰ Lembur")
+if st.sidebar.button("⏰ Ajukan Lembur"):
     st.switch_page("pages/overtime_management.py")
 
 if access_level in [1, 2, 3]:
-    if st.sidebar.button("✅ Approve Overtime"):
+    if st.sidebar.button("✅ Persetujuan Lembur"):
         st.switch_page("pages/overtime_approval.py")
 
 # Other Navigation
@@ -200,29 +205,21 @@ if st.sidebar.button("🚪 Logout"):
 st.subheader("🚀 Quick Actions")
 
 # Enhanced layout with overtime actions
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, = st.columns(2)
 
 with col1:
-    if st.button("📝 Request Leave", use_container_width=True):
+    if st.button("📝 Ajukan Cuti", use_container_width=True):
         st.switch_page("pages/leave_request.py")
 
 with col2:
-    if st.button("📊 Leave History", use_container_width=True):
-        st.switch_page("pages/leave_request.py")
-
-with col3:
-    if st.button("⏰ Submit Overtime", use_container_width=True):
-        st.switch_page("pages/overtime_management.py")
-
-with col4:
-    if st.button("📈 Overtime History", use_container_width=True):
+    if st.button("⏰ Ajukan Lembur", use_container_width=True):
         st.switch_page("pages/overtime_management.py")
 
 # -- Enhanced Status Overview with Leave and Overtime --
 st.subheader("📊 My Status Overview")
 
 # Create tabs for better organization
-tab1, tab2 = st.tabs(["📋 Leave Status", "⏰ Overtime Status"])
+tab1, tab2 = st.tabs(["📋 Status Cuti", "⏰ Status Lembur"])
 
 with tab1:
     st.markdown("### 📋 Leave Balance")
@@ -234,7 +231,8 @@ with tab1:
         pending = leave_quota.get("annual_pending", 0)
         available = total_quota - used - pending
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3 = st.columns([0.33, 0.33, 0.34])
+        # col1, col2, col3 = st.columns(3)
         
         with col1:
             st.metric("Used", f"{used}/{total_quota}")

@@ -19,11 +19,6 @@ name = "Rhaya Flicks HR Internal Apps"
 icon = "🎬"
 
 [[pages]]
-path = "pages/debug_auth.py"
-name = "Rhaya Flicks HR Internal Apps"
-icon = "🎬"
-
-[[pages]]
 path = "pages/leave_approval.py"
 name = "Rhaya Flicks HR Internal Apps"
 icon = "🎬"
@@ -40,5 +35,10 @@ icon = "🎬"
 
 [[pages]]
 path = "pages/overtime_approval.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/password_management.py"
 name = "Rhaya Flicks HR Internal Apps"
 icon = "🎬"
