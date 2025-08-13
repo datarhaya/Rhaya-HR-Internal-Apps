@@ -1,6 +1,6 @@
 # Enhanced database.py with direct supervisor support
 import os
-from utils.secrets_manager import SecretsManager
+from utils.secrets_manager import secrets
 
 import streamlit as st
 import streamlit_authenticator as stauth
@@ -17,23 +17,10 @@ from datetime import datetime, time, date
 
 @st.cache_resource
 def get_db():
-    """Get Firestore database instance"""
-    # db = firestore.Client.from_service_account_json("firebase_key.json")
+    firebase_credentials = secrets.get_firebase_credentials()
+    project_id = secrets.get_nested("firebase_auth", "project_id")
     
-    # Initialize secrets manager
-    secrets_manager = SecretsManager()
-
-    # Usage throughout your app
-    try:
-        # Firebase credentials
-        firebase_credentials = secrets_manager.get_firebase_credentials()
-        
-        
-    except ValueError as e:
-        st.error(f"Configuration error: {e}")
-
-    # Initialize Firestore client
-    db = firestore.Client(credentials=firebase_credentials, project=st.secrets["firebase_auth"]["project_id"])
+    db = firestore.Client(credentials=firebase_credentials, project=project_id)
     return db
 
 def get_all_auth():

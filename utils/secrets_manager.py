@@ -4,9 +4,14 @@ import toml
 from google.oauth2 import service_account
 
 class SecretsManager:
-    def __init__(self):
-        self._secrets = None
-        self._load_secrets()
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(SecretsManager, cls).__new__(cls)
+            cls._instance._secrets = None
+            cls._instance._load_secrets()
+        return cls._instance
     
     def _load_secrets(self):
         """Load secrets based on environment"""
@@ -17,7 +22,7 @@ class SecretsManager:
                 with open(secrets_path, 'r') as f:
                     self._secrets = toml.load(f)
             else:
-                raise ValueError("Render secrets file not found")
+                raise ValueError("Render secrets file not found at /etc/secrets/secrets")
         else:
             # Local/Streamlit Cloud - use st.secrets
             self._secrets = st.secrets
@@ -25,6 +30,16 @@ class SecretsManager:
     def get(self, key, default=None):
         """Get a secret value"""
         return self._secrets.get(key, default)
+    
+    def get_nested(self, *keys):
+        """Get nested secret value like secrets["firebase_auth"]["project_id"]"""
+        value = self._secrets
+        for key in keys:
+            if isinstance(value, dict) and key in value:
+                value = value[key]
+            else:
+                return None
+        return value
     
     def get_section(self, section):
         """Get an entire section"""
@@ -37,3 +52,6 @@ class SecretsManager:
             return service_account.Credentials.from_service_account_info(firebase_auth)
         else:
             raise ValueError("firebase_auth section not found")
+
+# Global instance
+secrets = SecretsManager()
