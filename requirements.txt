@@ -15,4 +15,4 @@ firebase_admin
 
 email-validator  # Optional but recommended
 bcrypt>=3.2.0
-
+toml

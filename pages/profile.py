@@ -102,24 +102,31 @@ st.title("👤 My Profile")
 st.markdown(f"**Employee:** {user_data.get('name')} | **ID:** {employee_id}")
 
 # Logout button
-if st.button("🚪 Logout", key="logout_profile"):
-    handle_logout()
-    st.success("Logged out! Redirecting...")
-    st.markdown(clear_cookies_js(), unsafe_allow_html=True)
-    st.stop()
+# if st.button("🚪 Logout", key="logout_profile"):
+#     handle_logout()
+#     st.success("Logged out! Redirecting...")
+#     st.markdown(clear_cookies_js(), unsafe_allow_html=True)
+#     st.stop()
 
 # Navigation
-col1, col2 = st.columns([1, 1])
+col1, col2, col3 = st.columns([0.3, 0.3, 0.3])
 with col1:
+    if st.button("🚪 Logout", key="logout_profile"):
+        handle_logout()
+        st.success("Logged out! Redirecting...")
+        st.markdown(clear_cookies_js(), unsafe_allow_html=True)
+        st.stop()
+
+with col2:
     if st.button("🏠 Back to Dashboard"):
         st.switch_page("pages/dashboard.py")
 
-with col2:
+with col3:
     if access_level == 1:
         if st.button("⚙️ Admin Panel"):
             st.switch_page("pages/admin_control.py")
 
-st.divider()
+# st.divider()
 
 # Create tabs
 tab1, tab2, tab3 = st.tabs(["📋 Profile Information", "✏️ Edit Profile", "💰 My Payslips"])

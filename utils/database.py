@@ -1,4 +1,7 @@
 # Enhanced database.py with direct supervisor support
+import os
+from utils.secrets_manager import SecretsManager
+
 import streamlit as st
 import streamlit_authenticator as stauth
 
@@ -10,33 +13,24 @@ import firebase_admin
 
 from datetime import datetime, time, date
 
-import os
+
 
 @st.cache_resource
 def get_db():
     """Get Firestore database instance"""
     # db = firestore.Client.from_service_account_json("firebase_key.json")
     
-    # Access credentials from st.secrets
-    def get_firebase_credentials():
-        """Get Firebase credentials based on environment"""
-        
-        # Check if we're on Render (they set this env var)
-        if os.getenv("RENDER"):
-            # Use Render secret file
-            secret_file_path = "/etc/secrets/firebase_auth"
-            if os.path.exists(secret_file_path):
-                return service_account.Credentials.from_service_account_info(secret_file_path)
-            else:
-                raise ValueError("Render secret file not found at /etc/secretsfirebase_auth")
-        
-        else:
-            # Use Streamlit secrets (local & Streamlit Cloud)
-            return service_account.Credentials.from_service_account_info(
-                st.secrets["firebase_auth"]
-            )
+    # Initialize secrets manager
+    secrets_manager = SecretsManager()
 
-    firebase_credentials = get_firebase_credentials()
+    # Usage throughout your app
+    try:
+        # Firebase credentials
+        firebase_credentials = secrets_manager.get_firebase_credentials()
+        
+        
+    except ValueError as e:
+        st.error(f"Configuration error: {e}")
 
     # Initialize Firestore client
     db = firestore.Client(credentials=firebase_credentials, project=st.secrets["firebase_auth"]["project_id"])
