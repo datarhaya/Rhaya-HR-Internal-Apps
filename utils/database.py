@@ -24,11 +24,11 @@ def get_db():
         # Check if we're on Render (they set this env var)
         if os.getenv("RENDER"):
             # Use Render secret file
-            secret_file_path = "/etc/secrets/firebase-credentials.json"
+            secret_file_path = "/etc/secrets/firebase_auth"
             if os.path.exists(secret_file_path):
-                return service_account.Credentials.from_service_account_file(secret_file_path)
+                return service_account.Credentials.from_service_account_info(secret_file_path)
             else:
-                raise ValueError("Render secret file not found at /etc/secrets/firebase-credentials.json")
+                raise ValueError("Render secret file not found at /etc/secretsfirebase_auth")
         
         else:
             # Use Streamlit secrets (local & Streamlit Cloud)
