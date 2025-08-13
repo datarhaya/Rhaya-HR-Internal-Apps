@@ -165,7 +165,7 @@ if is_authenticated() and not check_logout_status():
         st.switch_page("pages/dashboard.py")
 
 # Add password management navigation
-st.title("🏢 HR Management System")
+st.title("HR Internal Apps")
 
 # Add password management links before login form
 col1, col2, col3 = st.columns(3)

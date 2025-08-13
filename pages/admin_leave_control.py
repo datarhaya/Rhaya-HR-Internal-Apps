@@ -118,35 +118,35 @@ with tab1:
         st.info("📊 No leave statistics available for the current year.")
     
     # Recent activity
-    st.markdown("### 🕐 Recent System Activity")
+    # st.markdown("### 🕐 Recent System Activity")
     
-    # Get recent requests across all employees (admin view)
-    try:
-        # This would need to be implemented in the database functions
-        recent_activity = []  # Placeholder for recent activity
+    # # Get recent requests across all employees (admin view)
+    # try:
+    #     # This would need to be implemented in the database functions
+    #     recent_activity = []  # Placeholder for recent activity
         
-        if recent_activity:
-            for activity in recent_activity[:10]:  # Show last 10 activities
-                st.write(f"• {activity}")
-        else:
-            st.info("No recent activity to display.")
-    except Exception as e:
-        st.warning("Unable to load recent activity.")
+    #     if recent_activity:
+    #         for activity in recent_activity[:10]:  # Show last 10 activities
+    #             st.write(f"• {activity}")
+    #     else:
+    #         st.info("No recent activity to display.")
+    # except Exception as e:
+    #     st.warning("Unable to load recent activity.")
     
     # System health checks
-    st.markdown("### 🏥 System Health")
+    # st.markdown("### 🏥 System Health")
     
-    col1, col2 = st.columns(2)
+    # col1, col2 = st.columns(2)
     
-    with col1:
-        st.success("✅ Database Connection: Active")
-        st.success("✅ Authentication System: Working")
-        st.success("✅ Leave Calculations: Operational")
+    # with col1:
+    #     st.success("✅ Database Connection: Active")
+    #     st.success("✅ Authentication System: Working")
+    #     st.success("✅ Leave Calculations: Operational")
     
-    with col2:
-        st.info("📅 Current Date: " + datetime.now().strftime("%Y-%m-%d"))
-        st.info("📊 Active Users: Loading...")  # Would need implementation
-        st.info("💾 Last Backup: Loading...")    # Would need implementation
+    # with col2:
+    #     st.info("📅 Current Date: " + datetime.now().strftime("%Y-%m-%d"))
+        # st.info("📊 Active Users: Loading...")  # Would need implementation
+        # st.info("💾 Last Backup: Loading...")    # Would need implementation
 
 with tab2:
     st.subheader("🔄 Leave Quota Management")

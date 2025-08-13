@@ -435,13 +435,15 @@ def main():
         st.info(f"👤 Logged in as: **{username}**")
         
         # Tabs for different functions
-        tab1, tab2 = st.tabs(["🔄 Change Password", "🧪 Test System"])
+        # tab1, tab2 = st.tabs(["🔄 Change Password", "🧪 Test System"])
         
-        with tab1:
-            change_password_form()
+        # with tab1:
+            # change_password_form()
+
+        change_password_form()
         
-        with tab2:
-            test_password_system()
+        # with tab2:
+        #     test_password_system()
         
     else:
         st.warning("🔒 Password reset for non-authenticated users")

@@ -42,3 +42,18 @@ icon = "🎬"
 path = "pages/password_management.py"
 name = "Rhaya Flicks HR Internal Apps"
 icon = "🎬"
+
+[[pages]]
+path = "pages/reset_auth.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/profile.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"
+
+[[pages]]
+path = "pages/admin_user_management.py"
+name = "Rhaya Flicks HR Internal Apps"
+icon = "🎬"

@@ -1,4 +1,4 @@
-# Enhanced leave_request.py with admin view for all history
+# Enhanced leave_request.py with file upload INSIDE the form
 import streamlit as st
 from datetime import datetime, date, timedelta
 import utils.database as db
@@ -8,6 +8,19 @@ from utils.leave_system_db import (
     LEAVE_TYPES, submit_leave_request, get_employee_leave_quota,
     get_employee_leave_requests, calculate_working_days
 )
+
+# Import Firebase Storage utilities
+try:
+    from utils.firebase_storage import (
+        FirebaseStorageManager, 
+        display_file_attachment,
+        get_storage_config
+    )
+    STORAGE_AVAILABLE = True
+except ImportError:
+    st.warning("⚠️ Firebase Storage not configured. File uploads will be disabled.")
+    STORAGE_AVAILABLE = False
+
 import pandas as pd
 
 # Authentication check
@@ -27,38 +40,68 @@ user_data = st.session_state["user_data"]
 employee_id = user_data.get("employee_id")
 access_level = user_data.get("access_level", 4)
 
-def get_all_leave_history_admin():
-    """Get all leave requests in the system for admin view"""
+def upload_file_to_firebase(uploaded_file, employee_id, request_type="leave"):
+    """
+    Upload file to Firebase Storage (called during form submission)
+    
+    Args:
+        uploaded_file: Streamlit uploaded file object
+        employee_id: Employee ID
+        request_type: Type of request
+        
+    Returns:
+        dict: Upload result
+    """
+    if not STORAGE_AVAILABLE:
+        return {"success": False, "message": "Firebase Storage not available"}
+    
     try:
-        requests = []
-        query = db.db.collection("leave_requests").order_by("submitted_at", direction=db.firestore.Query.DESCENDING)
+        storage_manager = FirebaseStorageManager()
         
-        for doc in query.stream():
-            request_data = doc.to_dict()
-            request_data["id"] = doc.id
-            
-            # Enrich with employee data
-            employee_data = db.db.collection("users_db").document(request_data["employee_id"]).get().to_dict()
-            if employee_data:
-                request_data["employee_name"] = employee_data.get("name")
-                request_data["employee_email"] = employee_data.get("email")
-                request_data["employee_division"] = employee_data.get("division_name", "Unknown")
-                request_data["employee_role"] = employee_data.get("role_name", "Unknown")
-            
-            # Enrich with approver data
-            if request_data.get("approver_id"):
-                approver_data = db.db.collection("users_db").document(request_data["approver_id"]).get().to_dict()
-                if approver_data:
-                    request_data["approver_name"] = approver_data.get("name", "Unknown")
-                    request_data["approver_role"] = approver_data.get("role_name", "Unknown")
-            
-            requests.append(request_data)
+        if not storage_manager.bucket:
+            return {"success": False, "message": "Storage not initialized"}
         
-        return requests
+        result = storage_manager.upload_file(
+            uploaded_file,
+            employee_id,
+            request_type
+        )
+        
+        return result
         
     except Exception as e:
-        st.error(f"Error getting all leave history: {e}")
-        return []
+        return {"success": False, "message": f"Upload error: {str(e)}"}
+
+def show_attachment_in_history(request):
+    """Show file attachment in request history"""
+    
+    if not request.get("attachment"):
+        return
+    
+    attachment_data = request["attachment"]
+    
+    # Handle both old and new attachment formats
+    if isinstance(attachment_data, dict) and attachment_data.get("file_path"):
+        # Firebase Storage format
+        st.markdown("**📎 Attachment:**")
+        
+        if STORAGE_AVAILABLE:
+            display_file_attachment(
+                attachment_data.get("file_path"),
+                attachment_data
+            )
+        else:
+            # Fallback display
+            st.caption(f"📎 {attachment_data.get('original_filename', 'Unknown file')}")
+            st.caption(f"Size: {attachment_data.get('file_size', 0) / 1024:.1f} KB")
+    
+    elif isinstance(attachment_data, str):
+        # Legacy format (just filename)
+        st.caption(f"📎 Legacy attachment: {attachment_data}")
+    
+    else:
+        # Unknown format
+        st.caption("📎 Attachment information unavailable")
 
 # Page header
 st.title("📝 Leave Request System")
@@ -68,7 +111,7 @@ if access_level == 1:
     st.success("🔑 **Admin Access:** You can view all leave requests across the organization")
 
 # Logout button
-if st.button("🚪 Logout", key="logout_leave"):
+if st.sidebar.button("🚪 Logout", key="logout_leave"):
     handle_logout()
     st.success("Logged out! Redirecting...")
     st.markdown(clear_cookies_js(), unsafe_allow_html=True)
@@ -77,7 +120,7 @@ if st.button("🚪 Logout", key="logout_leave"):
 # Navigation
 col1, col2 = st.columns([1, 1])
 with col1:
-    if st.button("🏠 Back to Dashboard"):
+    if st.sidebar.button("🏠 Back to Dashboard"):
         st.switch_page("pages/dashboard.py")
 
 with col2:
@@ -88,16 +131,8 @@ with col2:
 
 st.divider()
 
-# Create different tabs based on access level
-if access_level == 1:  # Admin gets additional tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📝 New Request", 
-        "📊 My Leave Status", 
-        "📋 My Request History",
-        "🌐 All System History"
-    ])
-else:
-    tab1, tab2, tab3 = st.tabs(["📝 New Request", "📊 My Leave Status", "📋 Request History"])
+# Create tabs
+tab1, tab2, tab3 = st.tabs(["📝 New Request", "📊 My Leave Status", "📋 Request History"])
 
 with tab1:
     st.subheader("Submit New Leave Request")
@@ -118,7 +153,14 @@ with tab1:
     
     st.markdown("---")
     
-    # Leave request form
+    # Show file upload info
+    if STORAGE_AVAILABLE:
+        storage_config = get_storage_config()
+        st.info(f"📎 **File Upload Available:** Max {storage_config.get('max_file_size_mb', 10)} MB | Types: {', '.join(storage_config.get('allowed_extensions', []))}")
+    else:
+        st.warning("📁 File upload not available - Contact administrator")
+    
+    # Leave request form with file upload INSIDE
     with st.form("leave_request_form"):
         st.markdown("### Leave Request Details")
         
@@ -127,7 +169,6 @@ with tab1:
         for key, config in LEAVE_TYPES.items():
             # Filter by gender if applicable
             if config.get("gender_specific"):
-                # Assuming we have gender in user data
                 user_gender = user_data.get("gender", "").lower()
                 if config["gender_specific"] != user_gender:
                     continue
@@ -188,14 +229,50 @@ with tab1:
                 help="Required for extended leave periods"
             )
         
-        # File upload for documentation (optional)
-        uploaded_file = st.file_uploader(
-            "Supporting Documents (Optional)",
-            type=['pdf', 'jpg', 'jpeg', 'png'],
-            help="Upload medical certificate, invitation, or other supporting documents"
-        )
+        # File upload INSIDE the form
+        st.markdown("### 📎 Supporting Documents (Optional)")
         
-        # Submit button
+        if STORAGE_AVAILABLE:
+            storage_config = get_storage_config()
+            
+            # Show upload guidelines
+            with st.expander("ℹ️ File Upload Guidelines"):
+                st.markdown(f"""
+                **Accepted file types:** {', '.join(storage_config.get('allowed_extensions', []))}
+                **Maximum file size:** {storage_config.get('max_file_size_mb', 10)} MB
+                **Security:** All files are encrypted and securely stored
+                
+                **Recommended for different leave types:**
+                - 🏥 **Sick Leave:** Medical certificate
+                - 💒 **Marriage Leave:** Wedding invitation or certificate  
+                - ⚰️ **Bereavement Leave:** Death certificate or funeral notice
+                - 🤱 **Maternity Leave:** Medical documentation
+                """)
+            
+            # File uploader INSIDE form
+            uploaded_file = st.file_uploader(
+                "Choose file to attach",
+                type=[ext.replace(".", "") for ext in storage_config.get('allowed_extensions', [])],
+                help=f"Upload supporting documents (max {storage_config.get('max_file_size_mb', 10)} MB)",
+                key="leave_file_uploader"
+            )
+            
+            # Show file preview if file selected
+            if uploaded_file:
+                st.success(f"📄 **File selected:** {uploaded_file.name}")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.caption(f"**Size:** {uploaded_file.size / (1024 * 1024):.2f} MB")
+                with col2:
+                    st.caption(f"**Type:** {uploaded_file.name.split('.')[-1].upper()}")
+                with col3:
+                    st.caption(f"**Ready for upload** ✅")
+        
+        else:
+            st.info("📁 File upload not available - Contact administrator to enable file attachments")
+            uploaded_file = None
+        
+        # Submit button for the form
         submit_button = st.form_submit_button("🚀 Submit Leave Request", type="primary")
         
         if submit_button:
@@ -207,33 +284,89 @@ with tab1:
             elif start_date < date.today():
                 st.error("❌ Cannot request leave for past dates")
             else:
-                # Prepare leave data
-                leave_data = {
-                    "leave_type": selected_leave_type,
-                    "start_date": start_date.strftime("%Y-%m-%d"),
-                    "end_date": end_date.strftime("%Y-%m-%d"),
-                    "reason": reason.strip()
-                }
-                
-                if emergency_contact:
-                    leave_data["emergency_contact"] = emergency_contact
-                
-                if uploaded_file:
-                    # In a real implementation, you'd save the file and store the path
-                    leave_data["attachment"] = f"attachment_{uploaded_file.name}"
-                
-                # Submit request
-                result = submit_leave_request(employee_id, leave_data)
-                
-                if result["success"]:
-                    st.success(f"✅ {result['message']}")
-                    st.balloons()
-                    st.info("Your request has been sent to your supervisor for approval.")
+                # Show processing message
+                with st.spinner("Processing leave request..."):
                     
-                    # Clear form by rerunning
-                    st.rerun()
-                else:
-                    st.error(f"❌ {result['message']}")
+                    # Prepare leave data
+                    leave_data = {
+                        "leave_type": selected_leave_type,
+                        "start_date": start_date.strftime("%Y-%m-%d"),
+                        "end_date": end_date.strftime("%Y-%m-%d"),
+                        "reason": reason.strip()
+                    }
+                    
+                    if emergency_contact:
+                        leave_data["emergency_contact"] = emergency_contact
+                    
+                    # Handle file upload if file was selected
+                    file_upload_success = True
+                    if uploaded_file and STORAGE_AVAILABLE:
+                        st.info("📤 Uploading file...")
+                        
+                        # Upload file to Firebase Storage
+                        upload_result = upload_file_to_firebase(
+                            uploaded_file, 
+                            employee_id, 
+                            request_type="leave"
+                        )
+                        
+                        if upload_result["success"]:
+                            st.success(f"✅ File uploaded: {uploaded_file.name}")
+                            
+                            # Add file attachment data to leave request
+                            leave_data["attachment"] = {
+                                "file_path": upload_result["file_path"],
+                                "original_filename": upload_result["file_metadata"]["original_filename"],
+                                "file_size": upload_result["file_metadata"]["file_size"],
+                                "mime_type": upload_result["file_metadata"]["mime_type"],
+                                "upload_timestamp": upload_result["file_metadata"]["upload_timestamp"],
+                                "storage_type": "firebase"
+                            }
+                        else:
+                            st.error(f"❌ File upload failed: {upload_result['message']}")
+                            st.warning("⚠️ Leave request will be submitted without attachment")
+                            file_upload_success = False
+                    
+                    # Submit leave request
+                    st.info("📝 Submitting leave request...")
+                    result = submit_leave_request(employee_id, leave_data)
+                    
+                    if result["success"]:
+                        st.success(f"✅ {result['message']}")
+                        st.balloons()
+                        
+                        # Show summary
+                        st.markdown("### 📋 Request Summary")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            leave_type_name = LEAVE_TYPES.get(selected_leave_type, {}).get('name', 'Unknown')
+                            st.write(f"**Leave Type:** {leave_type_name}")
+                            st.write(f"**Duration:** {working_days} working days")
+                            st.write(f"**Period:** {start_date} to {end_date}")
+                        
+                        with col2:
+                            st.write(f"**Status:** 🕐 Pending Approval")
+                            if uploaded_file and file_upload_success:
+                                st.write(f"**Attachment:** ✅ {uploaded_file.name}")
+                            elif uploaded_file and not file_upload_success:
+                                st.write(f"**Attachment:** ❌ Upload failed")
+                            else:
+                                st.write(f"**Attachment:** ➖ None")
+                        
+                        st.info("📧 Your request has been sent to your supervisor for approval.")
+                        
+                        # Auto-refresh after success
+                        import time
+                        time.sleep(3)
+                        st.rerun()
+                        
+                    else:
+                        st.error(f"❌ {result['message']}")
+                        
+                        # If leave request failed but file was uploaded, offer to delete the file
+                        if uploaded_file and file_upload_success and leave_data.get("attachment"):
+                            st.warning("⚠️ Leave request failed but file was uploaded. The uploaded file will be cleaned up automatically.")
 
 with tab2:
     st.subheader("📊 My Leave Status")
@@ -271,7 +404,6 @@ with tab2:
         # Visual quota representation
         st.markdown("### Quota Visualization")
         
-        # Create a visual bar
         quota_data = {
             "Used": annual_used,
             "Pending": annual_pending,
@@ -282,7 +414,7 @@ with tab2:
         col_widths = [quota_data[key] / annual_quota if annual_quota > 0 else 0 for key in quota_data.keys()]
         
         # Display quota bar
-        cols = st.columns([max(0.1, width) for width in col_widths] + [0.1])  # Ensure minimum width
+        cols = st.columns([max(0.1, width) for width in col_widths] + [0.1])
         for i, (label, value) in enumerate(quota_data.items()):
             if value > 0:
                 with cols[i]:
@@ -294,95 +426,20 @@ with tab2:
     
     else:
         st.warning("⚠️ Unable to load leave quota information")
-    
-    st.markdown("---")
-    
-    # Leave types information
-    st.markdown("### Available Leave Types")
-    
-    for leave_type, config in LEAVE_TYPES.items():
-        # Filter by gender if applicable
-        if config.get("gender_specific"):
-            user_gender = user_data.get("gender", "").lower()
-            if config["gender_specific"] != user_gender:
-                continue
-        
-        with st.expander(f"{config['name']} - {config['description']}"):
-            if config.get("has_quota"):
-                st.write(f"📊 **Quota:** {config.get('max_days', 'Variable')} days per year")
-            elif config.get("fixed_days"):
-                st.write(f"📅 **Duration:** {config['fixed_days']} days")
-            elif config.get("max_consecutive"):
-                st.write(f"⏰ **Limit:** {config['max_consecutive']} consecutive days without medical certificate")
-            elif config.get("max_per_month"):
-                st.write(f"📅 **Limit:** {config['max_per_month']} day per month")
-            
-            if config.get("once_per_marriage"):
-                st.write("⚠️ **Note:** Can only be used once per marriage")
-            
-            st.write(f"✅ **Approval Required:** {'Yes' if config['requires_approval'] else 'No'}")
 
 with tab3:
     st.subheader("📋 My Leave Request History")
     
-    # Filter options
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        status_filter = st.selectbox(
-            "Filter by Status",
-            options=["All", "Pending", "Approved", "Rejected"],
-            index=0
-        )
-    
-    with col2:
-        year_filter = st.selectbox(
-            "Filter by Year",
-            options=["All"] + [str(year) for year in range(datetime.now().year, datetime.now().year - 3, -1)],
-            index=0
-        )
-    
-    with col3:
-        leave_type_filter = st.selectbox(
-            "Filter by Type",
-            options=["All"] + [config["name"] for config in LEAVE_TYPES.values()],
-            index=0
-        )
-    
-    # Get leave requests
+    # Get and display leave requests with attachment support
     all_requests = get_employee_leave_requests(employee_id) if employee_id else []
     
-    # Apply filters
-    filtered_requests = []
-    for request in all_requests:
-        # Status filter
-        if status_filter != "All":
-            if status_filter.lower() == "approved" and request.get("status") != "approved_final":
-                continue
-            elif status_filter.lower() != "approved" and request.get("status") != status_filter.lower():
-                continue
-        
-        # Year filter
-        if year_filter != "All":
-            request_year = datetime.strptime(request["start_date"], "%Y-%m-%d").year
-            if request_year != int(year_filter):
-                continue
-        
-        # Leave type filter
-        if leave_type_filter != "All":
-            request_leave_type = LEAVE_TYPES.get(request["leave_type"], {}).get("name", "Unknown")
-            if request_leave_type != leave_type_filter:
-                continue
-        
-        filtered_requests.append(request)
-    
-    if not filtered_requests:
-        st.info("📋 No leave requests found matching the selected filters.")
+    if not all_requests:
+        st.info("📋 No leave requests found.")
     else:
-        st.write(f"📊 **Total Requests:** {len(filtered_requests)}")
+        st.write(f"📊 **Total Requests:** {len(all_requests)}")
         
         # Display requests
-        for i, request in enumerate(filtered_requests):
+        for i, request in enumerate(all_requests):
             with st.container():
                 # Create columns for request details
                 col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
@@ -457,355 +514,12 @@ with tab3:
                         st.write("**Reason:**")
                         st.write(request["reason"])
                     
-                    # Attachment info
-                    if request.get("attachment"):
-                        st.write(f"📎 **Attachment:** {request['attachment']}")
+                    # Show attachment with Firebase Storage support
+                    show_attachment_in_history(request)
                 
                 st.divider()
 
-# Admin-only tab for all system history
-if access_level == 1:
-    with tab4:
-        st.subheader("🌐 All System Leave History (Admin View)")
-        st.info("👑 **Admin Privilege:** View complete leave history across the organization")
-        
-        # Get all leave history
-        all_system_history = get_all_leave_history_admin()
-        
-        if not all_system_history:
-            st.info("📋 No leave requests found in the system.")
-        else:
-            st.success(f"📊 **{len(all_system_history)}** total requests found across all employees")
-            
-            # Enhanced filter options for admin
-            col1, col2, col3, col4, col5 = st.columns(5)
-            
-            with col1:
-                admin_status_filter = st.selectbox(
-                    "Status",
-                    options=["All", "Pending", "Approved", "Rejected"],
-                    key="admin_status_filter"
-                )
-            
-            with col2:
-                admin_division_filter = st.selectbox(
-                    "Division",
-                    options=["All"] + list(set([r.get("employee_division", "Unknown") for r in all_system_history])),
-                    key="admin_division_filter"
-                )
-            
-            with col3:
-                admin_year_filter = st.selectbox(
-                    "Year",
-                    options=["All"] + [str(year) for year in range(datetime.now().year, datetime.now().year - 3, -1)],
-                    key="admin_year_filter"
-                )
-            
-            with col4:
-                admin_leave_type_filter = st.selectbox(
-                    "Leave Type",
-                    options=["All"] + [LEAVE_TYPES.get(lt, {}).get("name", lt) for lt in set([r.get("leave_type") for r in all_system_history])],
-                    key="admin_leave_type_filter"
-                )
-            
-            with col5:
-                admin_employee_filter = st.text_input(
-                    "Employee Name",
-                    placeholder="Search by name...",
-                    key="admin_employee_filter"
-                )
-            
-            # Apply filters
-            filtered_system_history = all_system_history
-            
-            if admin_status_filter != "All":
-                if admin_status_filter.lower() == "approved":
-                    filtered_system_history = [r for r in filtered_system_history if r.get("status") == "approved_final"]
-                elif admin_status_filter.lower() == "rejected":
-                    filtered_system_history = [r for r in filtered_system_history if r.get("status") == "rejected"]
-                elif admin_status_filter.lower() == "pending":
-                    filtered_system_history = [r for r in filtered_system_history if r.get("status") == "pending"]
-            
-            if admin_division_filter != "All":
-                filtered_system_history = [r for r in filtered_system_history if r.get("employee_division") == admin_division_filter]
-            
-            if admin_year_filter != "All":
-                filtered_system_history = [r for r in filtered_system_history if datetime.strptime(r.get("start_date", "1900-01-01"), "%Y-%m-%d").year == int(admin_year_filter)]
-            
-            if admin_leave_type_filter != "All":
-                filtered_system_history = [r for r in filtered_system_history if LEAVE_TYPES.get(r.get("leave_type"), {}).get("name") == admin_leave_type_filter]
-            
-            if admin_employee_filter.strip():
-                filtered_system_history = [r for r in filtered_system_history if admin_employee_filter.lower() in r.get("employee_name", "").lower()]
-            
-            # Display filtered results
-            if filtered_system_history:
-                st.info(f"📊 Showing {len(filtered_system_history)} of {len(all_system_history)} requests")
-                
-                # Summary statistics for filtered data
-                filtered_approved = len([r for r in filtered_system_history if r.get("status") == "approved_final"])
-                filtered_rejected = len([r for r in filtered_system_history if r.get("status") == "rejected"])
-                filtered_pending = len([r for r in filtered_system_history if r.get("status") == "pending"])
-                
-                col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-                
-                with col_stat1:
-                    st.metric("Filtered Total", len(filtered_system_history))
-                with col_stat2:
-                    approval_rate = (filtered_approved / len(filtered_system_history) * 100) if len(filtered_system_history) > 0 else 0
-                    st.metric("Approved", filtered_approved, f"{approval_rate:.1f}%")
-                with col_stat3:
-                    st.metric("Rejected", filtered_rejected)
-                with col_stat4:
-                    st.metric("Pending", filtered_pending)
-                
-                # View options
-                view_mode = st.radio(
-                    "View Mode:",
-                    options=["Table View", "Detailed View", "Summary Cards"],
-                    horizontal=True
-                )
-                
-                if view_mode == "Table View":
-                    # Convert to DataFrame for table display
-                    table_data = []
-                    for req in filtered_system_history:
-                        leave_type_name = LEAVE_TYPES.get(req.get('leave_type'), {}).get('name', 'Unknown')
-                        
-                        # Format dates
-                        submitted_date = req.get('submitted_at')
-                        if hasattr(submitted_date, 'timestamp'):
-                            submitted_str = datetime.fromtimestamp(submitted_date.timestamp()).strftime('%d %b %Y')
-                        else:
-                            submitted_str = 'Unknown'
-                        
-                        # Status with icon
-                        status = req.get("status", "unknown")
-                        if status == "pending":
-                            status_display = "🕐 Pending"
-                        elif status == "approved_final":
-                            status_display = "✅ Approved"
-                        elif status == "rejected":
-                            status_display = "❌ Rejected"
-                        else:
-                            status_display = "📋 Processing"
-                        
-                        table_data.append({
-                            "Employee": req.get("employee_name", "Unknown"),
-                            "Division": req.get("employee_division", "Unknown"),
-                            "Leave Type": leave_type_name,
-                            "Days": req.get("working_days", 0),
-                            "Start Date": req.get("start_date"),
-                            "End Date": req.get("end_date"),
-                            "Status": status_display,
-                            "Approver": req.get("approver_name", "Unknown"),
-                            "Submitted": submitted_str
-                        })
-                    
-                    df_admin = pd.DataFrame(table_data)
-                    st.dataframe(df_admin, use_container_width=True, hide_index=True)
-                    
-                    # Export option
-                    if st.button("📊 Export Filtered Data"):
-                        csv = df_admin.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download CSV",
-                            data=csv,
-                            file_name=f"filtered_leave_history_{datetime.now().strftime('%Y%m%d')}.csv",
-                            mime="text/csv"
-                        )
-                
-                elif view_mode == "Detailed View":
-                    # Show detailed cards (limited to first 20 for performance)
-                    display_count = min(20, len(filtered_system_history))
-                    st.info(f"Showing detailed view for first {display_count} requests")
-                    
-                    for req in filtered_system_history[:display_count]:
-                        with st.container():
-                            # Header
-                            leave_type_name = LEAVE_TYPES.get(req.get('leave_type'), {}).get('name', 'Unknown')
-                            status = req.get("status", "unknown")
-                            
-                            col_header1, col_header2, col_header3 = st.columns([2, 1, 1])
-                            
-                            with col_header1:
-                                st.markdown(f"**👤 {req.get('employee_name', 'Unknown')}** - {leave_type_name}")
-                            
-                            with col_header2:
-                                if status == "pending":
-                                    st.warning("🕐 Pending")
-                                elif status == "approved_final":
-                                    st.success("✅ Approved")
-                                elif status == "rejected":
-                                    st.error("❌ Rejected")
-                                else:
-                                    st.info("📋 Processing")
-                            
-                            with col_header3:
-                                st.write(f"**{req.get('working_days', 0)} days**")
-                            
-                            # Details
-                            col_det1, col_det2, col_det3 = st.columns(3)
-                            
-                            with col_det1:
-                                st.write(f"**📧 Email:** {req.get('employee_email', 'N/A')}")
-                                st.write(f"**🏢 Division:** {req.get('employee_division', 'Unknown')}")
-                                st.write(f"**💼 Role:** {req.get('employee_role', 'Unknown')}")
-                            
-                            with col_det2:
-                                st.write(f"**📅 Period:** {req.get('start_date')} to {req.get('end_date')}")
-                                
-                                submitted_date = req.get('submitted_at')
-                                if hasattr(submitted_date, 'timestamp'):
-                                    submitted_str = datetime.fromtimestamp(submitted_date.timestamp()).strftime('%d %B %Y, %H:%M')
-                                    st.write(f"**📤 Submitted:** {submitted_str}")
-                                
-                                if req.get('reason'):
-                                    st.write(f"**💭 Reason:** {req['reason'][:100]}{'...' if len(req['reason']) > 100 else ''}")
-                            
-                            with col_det3:
-                                if req.get("approver_name"):
-                                    st.write(f"**✅ Approver:** {req.get('approver_name')}")
-                                    st.write(f"**🎭 Approver Role:** {req.get('approver_role', 'Unknown')}")
-                                
-                                # Processing date
-                                processed_date = req.get('approved_at') or req.get('rejected_at')
-                                if processed_date and hasattr(processed_date, 'timestamp'):
-                                    processed_str = datetime.fromtimestamp(processed_date.timestamp()).strftime('%d %B %Y, %H:%M')
-                                    st.write(f"**⏰ Processed:** {processed_str}")
-                                
-                                if req.get('approver_comments'):
-                                    st.write(f"**💬 Comments:** {req['approver_comments']}")
-                            
-                            st.markdown("---")
-                
-                elif view_mode == "Summary Cards":
-                    # Group by division or leave type for summary
-                    summary_by = st.selectbox(
-                        "Summarize by:",
-                        options=["Division", "Leave Type", "Status", "Month"],
-                        key="admin_summary_by"
-                    )
-                    
-                    if summary_by == "Division":
-                        division_summary = {}
-                        for req in filtered_system_history:
-                            division = req.get("employee_division", "Unknown")
-                            if division not in division_summary:
-                                division_summary[division] = {"total": 0, "approved": 0, "rejected": 0, "pending": 0}
-                            
-                            division_summary[division]["total"] += 1
-                            status = req.get("status", "pending")
-                            if status == "approved_final":
-                                division_summary[division]["approved"] += 1
-                            elif status == "rejected":
-                                division_summary[division]["rejected"] += 1
-                            elif status == "pending":
-                                division_summary[division]["pending"] += 1
-                        
-                        # Display division cards
-                        for division, stats in division_summary.items():
-                            with st.container():
-                                st.markdown(f"### 🏢 {division} Division")
-                                
-                                col1, col2, col3, col4, col5 = st.columns(5)
-                                
-                                with col1:
-                                    st.metric("Total", stats["total"])
-                                with col2:
-                                    st.metric("Approved", stats["approved"])
-                                with col3:
-                                    st.metric("Rejected", stats["rejected"])
-                                with col4:
-                                    st.metric("Pending", stats["pending"])
-                                with col5:
-                                    approval_rate = (stats["approved"] / stats["total"] * 100) if stats["total"] > 0 else 0
-                                    st.metric("Approval Rate", f"{approval_rate:.1f}%")
-                                
-                                st.markdown("---")
-                    
-                    elif summary_by == "Leave Type":
-                        leave_type_summary = {}
-                        for req in filtered_system_history:
-                            leave_type = LEAVE_TYPES.get(req.get('leave_type'), {}).get('name', 'Unknown')
-                            if leave_type not in leave_type_summary:
-                                leave_type_summary[leave_type] = {"total": 0, "approved": 0, "rejected": 0, "pending": 0}
-                            
-                            leave_type_summary[leave_type]["total"] += 1
-                            status = req.get("status", "pending")
-                            if status == "approved_final":
-                                leave_type_summary[leave_type]["approved"] += 1
-                            elif status == "rejected":
-                                leave_type_summary[leave_type]["rejected"] += 1
-                            elif status == "pending":
-                                leave_type_summary[leave_type]["pending"] += 1
-                        
-                        # Display leave type cards
-                        for leave_type, stats in leave_type_summary.items():
-                            with st.container():
-                                st.markdown(f"### 📝 {leave_type}")
-                                
-                                col1, col2, col3, col4, col5 = st.columns(5)
-                                
-                                with col1:
-                                    st.metric("Total", stats["total"])
-                                with col2:
-                                    st.metric("Approved", stats["approved"])
-                                with col3:
-                                    st.metric("Rejected", stats["rejected"])
-                                with col4:
-                                    st.metric("Pending", stats["pending"])
-                                with col5:
-                                    approval_rate = (stats["approved"] / stats["total"] * 100) if stats["total"] > 0 else 0
-                                    st.metric("Approval Rate", f"{approval_rate:.1f}%")
-                                
-                                st.markdown("---")
-                    
-                    elif summary_by == "Month":
-                        monthly_summary = {}
-                        for req in filtered_system_history:
-                            try:
-                                start_date = datetime.strptime(req.get("start_date", "1900-01-01"), "%Y-%m-%d")
-                                month_key = start_date.strftime("%Y-%m")
-                                if month_key not in monthly_summary:
-                                    monthly_summary[month_key] = {"total": 0, "approved": 0, "rejected": 0, "pending": 0}
-                                
-                                monthly_summary[month_key]["total"] += 1
-                                status = req.get("status", "pending")
-                                if status == "approved_final":
-                                    monthly_summary[month_key]["approved"] += 1
-                                elif status == "rejected":
-                                    monthly_summary[month_key]["rejected"] += 1
-                                elif status == "pending":
-                                    monthly_summary[month_key]["pending"] += 1
-                            except:
-                                continue
-                        
-                        # Display monthly cards (sorted)
-                        for month, stats in sorted(monthly_summary.items(), reverse=True):
-                            with st.container():
-                                month_display = datetime.strptime(month, "%Y-%m").strftime("%B %Y")
-                                st.markdown(f"### 📅 {month_display}")
-                                
-                                col1, col2, col3, col4, col5 = st.columns(5)
-                                
-                                with col1:
-                                    st.metric("Total", stats["total"])
-                                with col2:
-                                    st.metric("Approved", stats["approved"])
-                                with col3:
-                                    st.metric("Rejected", stats["rejected"])
-                                with col4:
-                                    st.metric("Pending", stats["pending"])
-                                with col5:
-                                    approval_rate = (stats["approved"] / stats["total"] * 100) if stats["total"] > 0 else 0
-                                    st.metric("Approval Rate", f"{approval_rate:.1f}%")
-                                
-                                st.markdown("---")
-            else:
-                st.info("No requests match the selected filters.")
-
-# Footer with navigation
+# Footer
 st.markdown("---")
 col1, col2, col3 = st.columns(3)
 
@@ -823,52 +537,18 @@ with col3:
         if st.button("⚙️ Admin Panel", use_container_width=True):
             st.switch_page("pages/admin_control.py")
 
-# Statistics for the current year (in sidebar)
-if filtered_requests or (access_level == 1 and all_system_history):
-    st.sidebar.markdown("### 📊 Leave Statistics")
-    
-    # For regular users, show their own stats
-    if access_level != 1:
-        current_year_requests = [r for r in all_requests 
-                               if datetime.strptime(r["start_date"], "%Y-%m-%d").year == datetime.now().year]
-        
-        if current_year_requests:
-            total_requests = len(current_year_requests)
-            approved_requests = len([r for r in current_year_requests if r.get("status") == "approved_final"])
-            pending_requests = len([r for r in current_year_requests if r.get("status") == "pending"])
-            rejected_requests = len([r for r in current_year_requests if r.get("status") == "rejected"])
-            
-            st.sidebar.metric("My Requests", total_requests)
-            st.sidebar.metric("Approved", approved_requests)
-            st.sidebar.metric("Pending", pending_requests)
-            st.sidebar.metric("Rejected", rejected_requests)
-            
-            # Approval rate
-            if total_requests > 0:
-                approval_rate = (approved_requests / total_requests) * 100
-                st.sidebar.metric("My Approval Rate", f"{approval_rate:.1f}%")
-    
-    # For admin users, show system-wide stats
-    else:
-        current_year_system = [r for r in all_system_history 
-                              if datetime.strptime(r.get("start_date", "1900-01-01"), "%Y-%m-%d").year == datetime.now().year]
-        
-        if current_year_system:
-            total_system = len(current_year_system)
-            approved_system = len([r for r in current_year_system if r.get("status") == "approved_final"])
-            pending_system = len([r for r in current_year_system if r.get("status") == "pending"])
-            rejected_system = len([r for r in current_year_system if r.get("status") == "rejected"])
-            
-            st.sidebar.markdown("**System-wide (Current Year)**")
-            st.sidebar.metric("Total Requests", total_system)
-            st.sidebar.metric("Approved", approved_system)
-            st.sidebar.metric("Pending", pending_system)
-            st.sidebar.metric("Rejected", rejected_system)
-            
-            # System approval rate
-            if total_system > 0:
-                system_approval_rate = (approved_system / total_system) * 100
-                st.sidebar.metric("System Approval Rate", f"{system_approval_rate:.1f}%")
+# Sidebar info
+# if STORAGE_AVAILABLE:
+#     st.sidebar.markdown("### 📁 File Storage")
+#     try:
+#         storage_config = get_storage_config()
+#         st.sidebar.success("✅ Firebase Storage Active")
+#         st.sidebar.caption(f"Max file size: {storage_config.get('max_file_size_mb', 10)} MB")
+#         st.sidebar.caption(f"Allowed types: {len(storage_config.get('allowed_extensions', []))} formats")
+#     except:
+#         st.sidebar.warning("⚠️ Storage configuration issue")
+# else:
+#     st.sidebar.warning("📁 File storage disabled")
 
 st.sidebar.markdown("---")
 st.sidebar.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

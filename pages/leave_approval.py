@@ -10,6 +10,7 @@ from utils.leave_system_db import (
     get_team_members, get_approval_chain
 )
 import pandas as pd
+from utils.firebase_storage import display_file_attachment
 
 # Authentication check
 if not is_authenticated():
@@ -368,8 +369,17 @@ else:
                     if request.get('emergency_contact'):
                         st.write(f"**Emergency Contact:** {request['emergency_contact']}")
                     
-                    if request.get('attachment'):
-                        st.write(f"**📎 Attachment:** {request['attachment']}")
+                    if request.get("attachment"):
+                        st.markdown("**📎 Attachments:**")
+                        attachment_data = request["attachment"]
+                        
+                        if isinstance(attachment_data, dict) and attachment_data.get("file_path"):
+                            display_file_attachment(
+                                attachment_data.get("file_path"), 
+                                attachment_data
+                            )
+                        else:
+                            st.caption(f"📎 {attachment_data}")
 
             st.markdown("---")
             

@@ -157,13 +157,17 @@ else:
     overtime_balance_hours = 0
     overtime_approved_hours = 0
 
-# -- Enhanced Navigation Sidebar --
+# -- Enhanced Sidebar Navigation --
 st.sidebar.title("🧭 Navigation")
 
 # Add to sidebar navigation
 st.sidebar.markdown("### 🔐 Akun")
 if st.sidebar.button("🔑 Ubah Kata Sandi"):
     st.switch_page("pages/password_management.py")
+
+# Add this new profile button
+if st.sidebar.button("👤 My Profile"):
+    st.switch_page("pages/profile.py")
 
 # Leave Management Section
 st.sidebar.markdown("### 📋 Cuti")
@@ -178,7 +182,7 @@ if access_level == 1:
     if st.sidebar.button("⚙️ Cuti Admin Control"):
         st.switch_page("pages/admin_leave_control.py")
 
-# NEW: Overtime Management Section
+# Overtime Management Section
 st.sidebar.markdown("### ⏰ Lembur")
 if st.sidebar.button("⏰ Ajukan Lembur"):
     st.switch_page("pages/overtime_management.py")
@@ -189,11 +193,14 @@ if access_level in [1, 2, 3]:
 
 # Other Navigation
 st.sidebar.markdown("### 👤 Profile & Settings")
+
+# Update this section to include the new admin user management page
 if access_level == 1:  # Admin
+    if st.sidebar.button("👥 User Management"):
+        st.switch_page("pages/admin_user_management.py")
+    
     if st.sidebar.button("Admin Control Panel"):
         st.switch_page("pages/admin_control.py")
-
-st.sidebar.button("My Profile")
 
 # Sidebar logout as backup
 st.sidebar.markdown("---")
@@ -201,11 +208,13 @@ if st.sidebar.button("🚪 Logout"):
     handle_logout()
     st.markdown(clear_cookies_js(), unsafe_allow_html=True)
 
-# -- Enhanced Quick Actions --
+# Also update the main quick actions section to include profile:
+# Find the "Quick Actions" section and update it:
+
 st.subheader("🚀 Quick Actions")
 
-# Enhanced layout with overtime actions
-col1, col2, = st.columns(2)
+# Enhanced layout with profile action
+col1, col2, col3 = st.columns(3)
 
 with col1:
     if st.button("📝 Ajukan Cuti", use_container_width=True):
@@ -215,8 +224,117 @@ with col2:
     if st.button("⏰ Ajukan Lembur", use_container_width=True):
         st.switch_page("pages/overtime_management.py")
 
+with col3:
+    if st.button("👤 My Profile", use_container_width=True):
+        st.switch_page("pages/profile.py")
+
+# -- Enhanced Stats Summary --
+# st.subheader("📈 My Activity Summary")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric(
+        "Leave Used (YTD)", 
+        f"{leave_used} days",
+        help="Leave days used this year"
+    )
+
+with col2:
+    st.metric(
+        "Leave Available", 
+        f"{leave_remaining} days",
+        help="Remaining leave balance"
+    )
+
+with col3:
+    st.metric(
+        "Overtime Balance", 
+        f"{overtime_balance_hours:.1f}h",
+        help="Current overtime hours pending payment"
+    )
+
+with col4:
+    # if access_level in [1, 2, 3]:
+        # st.metric(
+        #     "Pending Approvals", 
+        #     f"{total_pending}",
+        #     help="Total requests awaiting your approval"
+        # )
+    # else:
+        st.metric(
+            "Pending Requests", 
+            f"{pending_leave_requests + pending_overtime_requests}",
+            help="Your requests awaiting approval"
+        )
+
+# -- Enhanced Important Notices --
+st.subheader("📢 Important Notices")
+
+# Show important leave and overtime related notices
+notices = []
+
+# Check if leave quota is running low
+if leave_quota and leave_remaining <= 3:
+    notices.append({
+        "type": "warning",
+        "message": f"⚠️ Low leave balance: Only {leave_remaining} days remaining this year"
+    })
+
+# Check for pending leave requests
+if pending_leave_requests > 0:
+    notices.append({
+        "type": "info", 
+        "message": f"📋 You have {pending_leave_requests} leave request(s) pending approval"
+    })
+
+# Check for pending overtime requests
+if pending_overtime_requests > 0:
+    notices.append({
+        "type": "info", 
+        "message": f"⏰ You have {pending_overtime_requests} overtime request(s) pending approval"
+    })
+
+# Check overtime balance
+if overtime_balance and overtime_balance_hours > 20:
+    notices.append({
+        "type": "info",
+        "message": f"💰 High overtime balance: {overtime_balance_hours:.1f} hours ready for payroll"
+    })
+
+# Overtime rate warning
+if user_data.get('overtime_rate', 0) <= 0:
+    notices.append({
+        "type": "warning",
+        "message": "⚠️ Overtime rate not set. Contact HR to set your overtime rate."
+    })
+
+# Manager notices
+if access_level in [1, 2, 3] and (pending_leave_approvals > 0 or pending_overtime_approvals > 0):
+    notices.append({
+        "type": "warning",
+        "message": f"👥 Manager Alert: {pending_leave_approvals + pending_overtime_approvals} requests need your approval"
+    })
+
+# Display notices
+if notices:
+    for notice in notices:
+        if notice["type"] == "warning":
+            st.warning(notice["message"])
+        elif notice["type"] == "error":
+            st.error(notice["message"])
+        else:
+            st.info(notice["message"])
+else:
+    st.success("✅ No important notices at this time")
+
+# Year-end quota reset reminder (for admins)
+if access_level == 1 and datetime.now().month == 12:
+    st.info("🗓️ **Admin Reminder:** Don't forget to reset annual leave quotas and process overtime payments for the new year!")
+
+
 # -- Enhanced Status Overview with Leave and Overtime --
-st.subheader("📊 My Status Overview")
+st.subheader("Status Overview")
 
 # Create tabs for better organization
 tab1, tab2 = st.tabs(["📋 Status Cuti", "⏰ Status Lembur"])
@@ -361,111 +479,6 @@ if access_level in [1, 2, 3]:
     else:
         st.success("✅ All caught up! No pending approvals.")
 
-# -- Enhanced Important Notices --
-st.subheader("📢 Important Notices")
-
-# Show important leave and overtime related notices
-notices = []
-
-# Check if leave quota is running low
-if leave_quota and leave_remaining <= 3:
-    notices.append({
-        "type": "warning",
-        "message": f"⚠️ Low leave balance: Only {leave_remaining} days remaining this year"
-    })
-
-# Check for pending leave requests
-if pending_leave_requests > 0:
-    notices.append({
-        "type": "info", 
-        "message": f"📋 You have {pending_leave_requests} leave request(s) pending approval"
-    })
-
-# Check for pending overtime requests
-if pending_overtime_requests > 0:
-    notices.append({
-        "type": "info", 
-        "message": f"⏰ You have {pending_overtime_requests} overtime request(s) pending approval"
-    })
-
-# Check overtime balance
-if overtime_balance and overtime_balance_hours > 20:
-    notices.append({
-        "type": "info",
-        "message": f"💰 High overtime balance: {overtime_balance_hours:.1f} hours ready for payroll"
-    })
-
-# Overtime rate warning
-if user_data.get('overtime_rate', 0) <= 0:
-    notices.append({
-        "type": "warning",
-        "message": "⚠️ Overtime rate not set. Contact HR to set your overtime rate."
-    })
-
-# Manager notices
-if access_level in [1, 2, 3] and (pending_leave_approvals > 0 or pending_overtime_approvals > 0):
-    notices.append({
-        "type": "warning",
-        "message": f"👥 Manager Alert: {pending_leave_approvals + pending_overtime_approvals} requests need your approval"
-    })
-
-# Display notices
-if notices:
-    for notice in notices:
-        if notice["type"] == "warning":
-            st.warning(notice["message"])
-        elif notice["type"] == "error":
-            st.error(notice["message"])
-        else:
-            st.info(notice["message"])
-else:
-    st.success("✅ No important notices at this time")
-
-# Year-end quota reset reminder (for admins)
-if access_level == 1 and datetime.now().month == 12:
-    st.info("🗓️ **Admin Reminder:** Don't forget to reset annual leave quotas and process overtime payments for the new year!")
-
-# -- Enhanced Stats Summary --
-st.subheader("📈 My Activity Summary")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric(
-        "Leave Used (YTD)", 
-        f"{leave_used} days",
-        help="Leave days used this year"
-    )
-
-with col2:
-    st.metric(
-        "Leave Available", 
-        f"{leave_remaining} days",
-        help="Remaining leave balance"
-    )
-
-with col3:
-    st.metric(
-        "Overtime Balance", 
-        f"{overtime_balance_hours:.1f}h",
-        help="Current overtime hours pending payment"
-    )
-
-with col4:
-    if access_level in [1, 2, 3]:
-        st.metric(
-            "Pending Approvals", 
-            f"{total_pending}",
-            help="Total requests awaiting your approval"
-        )
-    else:
-        st.metric(
-            "Pending Requests", 
-            f"{pending_leave_requests + pending_overtime_requests}",
-            help="Your requests awaiting approval"
-        )
-
-st.markdown("---")
 
 # -- Enhanced Sidebar Information --
 st.sidebar.markdown("### 📊 Quick Stats")
