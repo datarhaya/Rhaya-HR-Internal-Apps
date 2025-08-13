@@ -269,7 +269,7 @@ with col4:
         )
 
 # -- Enhanced Important Notices --
-st.subheader("📢 Important Notices")
+
 
 # Show important leave and overtime related notices
 notices = []
@@ -303,11 +303,11 @@ if overtime_balance and overtime_balance_hours > 20:
     })
 
 # Overtime rate warning
-if user_data.get('overtime_rate', 0) <= 0:
-    notices.append({
-        "type": "warning",
-        "message": "⚠️ Overtime rate not set. Contact HR to set your overtime rate."
-    })
+# if user_data.get('overtime_rate', 0) <= 0:
+#     notices.append({
+#         "type": "warning",
+#         "message": "⚠️ Overtime rate not set. Contact HR to set your overtime rate."
+#     })
 
 # Manager notices
 if access_level in [1, 2, 3] and (pending_leave_approvals > 0 or pending_overtime_approvals > 0):
@@ -318,6 +318,7 @@ if access_level in [1, 2, 3] and (pending_leave_approvals > 0 or pending_overtim
 
 # Display notices
 if notices:
+    st.subheader("📢 Important Notices")
     for notice in notices:
         if notice["type"] == "warning":
             st.warning(notice["message"])
@@ -326,7 +327,8 @@ if notices:
         else:
             st.info(notice["message"])
 else:
-    st.success("✅ No important notices at this time")
+    pass
+    # st.success("✅ No important notices at this time")
 
 # Year-end quota reset reminder (for admins)
 if access_level == 1 and datetime.now().month == 12:

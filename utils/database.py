@@ -10,15 +10,33 @@ import firebase_admin
 
 from datetime import datetime, time, date
 
+import os
+
 @st.cache_resource
 def get_db():
     """Get Firestore database instance"""
     # db = firestore.Client.from_service_account_json("firebase_key.json")
     
     # Access credentials from st.secrets
-    firebase_credentials = service_account.Credentials.from_service_account_info(
-        st.secrets["firebase_auth"]
-    )
+    def get_firebase_credentials():
+        """Get Firebase credentials based on environment"""
+        
+        # Check if we're on Render (they set this env var)
+        if os.getenv("RENDER"):
+            # Use Render secret file
+            secret_file_path = "/etc/secrets/firebase-credentials.json"
+            if os.path.exists(secret_file_path):
+                return service_account.Credentials.from_service_account_file(secret_file_path)
+            else:
+                raise ValueError("Render secret file not found at /etc/secrets/firebase-credentials.json")
+        
+        else:
+            # Use Streamlit secrets (local & Streamlit Cloud)
+            return service_account.Credentials.from_service_account_info(
+                st.secrets["firebase_auth"]
+            )
+
+    firebase_credentials = get_firebase_credentials()
 
     # Initialize Firestore client
     db = firestore.Client(credentials=firebase_credentials, project=st.secrets["firebase_auth"]["project_id"])
