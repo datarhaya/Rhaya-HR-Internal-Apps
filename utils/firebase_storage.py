@@ -11,14 +11,18 @@ import mimetypes
 import tempfile
 from pathlib import Path
 import json
+from utils.secrets_manager import secrets as app_secrets, get_firebase_credentials, get_firebase_storage_config
 
 class FirebaseStorageManager:
     """Manage file uploads and downloads with Firebase Cloud Storage - FIXED VERSION"""
     
     def __init__(self):
-        self.bucket_name = st.secrets.get("firebase_storage", {}).get("bucket_name")
-        self.max_file_size = st.secrets.get("firebase_storage", {}).get("max_file_size_mb", 10) * 1024 * 1024  # Convert to bytes
-        self.allowed_extensions = st.secrets.get("firebase_storage", {}).get("allowed_extensions", [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"])
+        # Get storage config from secrets manager
+        storage_config = app_secrets.firebase_storage
+        
+        self.bucket_name = storage_config.get("bucket_name")
+        self.max_file_size = storage_config.get("max_file_size_mb", 10) * 1024 * 1024  # Convert to bytes
+        self.allowed_extensions = storage_config.get("allowed_extensions", [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"])
         
         # Initialize Firebase Admin if not already done
         self._init_firebase_admin()
@@ -43,8 +47,8 @@ class FirebaseStorageManager:
         except ValueError:
             # Initialize Firebase Admin with service account
             try:
-                # FIXED: Get credentials from secrets and handle them properly
-                firebase_credentials_dict = dict(st.secrets["firebase_auth"])
+                # FIXED: Get credentials from secrets manager
+                firebase_credentials_dict = app_secrets.firebase_auth
                 
                 # Create credentials object from dictionary
                 cred = credentials.Certificate(firebase_credentials_dict)
@@ -58,13 +62,13 @@ class FirebaseStorageManager:
                 
             except Exception as e:
                 st.error(f"Failed to initialize Firebase Admin: {e}")
-                st.error("Please check your firebase_auth configuration in secrets.toml")
+                st.error("Please check your firebase_auth configuration in secrets")
                 
                 # Show debug info (remove in production)
-                if st.secrets.get("environment") == "development":
-                    st.write("Debug - Available secrets keys:", list(st.secrets.keys()))
-                    if "firebase_auth" in st.secrets:
-                        auth_keys = [k for k in st.secrets["firebase_auth"].keys() if k != "private_key"]
+                if app_secrets.get("environment") == "development":
+                    st.write("Debug - Available secrets keys:", list(app_secrets._secrets.keys()))
+                    if "firebase_auth" in app_secrets:
+                        auth_keys = [k for k in app_secrets.firebase_auth.keys() if k != "private_key"]
                         st.write("Debug - firebase_auth keys:", auth_keys)
     
     def validate_file(self, uploaded_file):
@@ -336,13 +340,14 @@ class FirebaseStorageManager:
 
 # Storage configuration helper
 def get_storage_config():
-    """Get storage configuration from secrets"""
+    """Get storage configuration from secrets manager"""
     try:
+        storage_config = app_secrets.firebase_storage
         return {
-            "bucket_name": st.secrets.get("firebase_storage", {}).get("bucket_name"),
-            "max_file_size_mb": st.secrets.get("firebase_storage", {}).get("max_file_size_mb", 10),
-            "allowed_extensions": st.secrets.get("firebase_storage", {}).get("allowed_extensions", [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"]),
-            "auto_delete_days": st.secrets.get("firebase_storage", {}).get("auto_delete_days", 365)
+            "bucket_name": storage_config.get("bucket_name"),
+            "max_file_size_mb": storage_config.get("max_file_size_mb", 10),
+            "allowed_extensions": storage_config.get("allowed_extensions", [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"]),
+            "auto_delete_days": storage_config.get("auto_delete_days", 365)
         }
     except Exception as e:
         st.error(f"Error loading storage configuration: {e}")
