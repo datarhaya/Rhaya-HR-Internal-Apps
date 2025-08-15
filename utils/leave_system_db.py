@@ -5,18 +5,14 @@ from firebase_admin.firestore import SERVER_TIMESTAMP
 from google.oauth2 import service_account
 from datetime import datetime, timedelta, date
 
+from utils.secrets_manager import secrets, get_firebase_credentials
 
+@st.cache_resource
 def get_db():
-    """Get Firestore database instance"""
-    # db = firestore.Client.from_service_account_json("firebase_key.json")
+    firebase_credentials = get_firebase_credentials()
+    project_id = secrets["firebase_auth"]["project_id"]  # or secrets.get_nested("firebase_auth", "project_id")
     
-    # Access credentials from st.secrets
-    firebase_credentials = service_account.Credentials.from_service_account_info(
-        st.secrets["firebase_auth"]
-    )
-
-    # Initialize Firestore client
-    db = firestore.Client(credentials=firebase_credentials, project=st.secrets["firebase_auth"]["project_id"])
+    db = firestore.Client(credentials=firebase_credentials, project=project_id)
     return db
 
 db = get_db()

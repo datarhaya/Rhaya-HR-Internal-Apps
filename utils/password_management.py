@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import utils.database as db
 from utils.auth import get_authenticator, check_authentication
 from utils.logout_handler import is_authenticated
+from utils.secrets_manager import secrets as app_secrets, get_email_config
 import re
 import logging
 import bcrypt
@@ -27,9 +28,9 @@ class PasswordManager:
         self.email_config = self.get_email_config()
     
     def get_email_config(self):
-        """Get email configuration from Streamlit secrets"""
+        """Get email configuration from secrets manager"""
         try:
-            email_config = st.secrets.get("email", {})
+            email_config = app_secrets.email_config
             return {
                 "smtp_server": email_config.get("smtp_server", "smtp.gmail.com"),
                 "smtp_port": int(email_config.get("smtp_port", 587)),

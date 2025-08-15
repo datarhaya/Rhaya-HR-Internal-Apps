@@ -295,11 +295,11 @@ with st.expander("🔒 Security Information"):
     """)
 
 # Show debug info only in development (remove in production)
-if st.secrets.get("environment", "production") == "development":
-    with st.expander("🐛 Debug Info (Dev Only)"):
-        st.write("Session State Debug:", {
-            "authentication_status": st.session_state.get("authentication_status"),
-            "username": st.session_state.get("username"),
-            "name": st.session_state.get("name"),
-            "force_password_change": st.session_state.get("force_password_change", False)
-        })
+# if st.secrets.get("environment", "production") == "development":
+#     with st.expander("🐛 Debug Info (Dev Only)"):
+#         st.write("Session State Debug:", {
+#             "authentication_status": st.session_state.get("authentication_status"),
+#             "username": st.session_state.get("username"),
+#             "name": st.session_state.get("name"),
+#             "force_password_change": st.session_state.get("force_password_change", False)
+#         })

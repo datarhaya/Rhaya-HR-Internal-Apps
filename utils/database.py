@@ -1,6 +1,5 @@
 # Enhanced database.py with direct supervisor support
 import os
-from utils.secrets_manager import secrets
 
 import streamlit as st
 import streamlit_authenticator as stauth
@@ -13,12 +12,12 @@ import firebase_admin
 
 from datetime import datetime, time, date
 
-
+from utils.secrets_manager import secrets, get_firebase_credentials
 
 @st.cache_resource
 def get_db():
-    firebase_credentials = secrets.get_firebase_credentials()
-    project_id = secrets.get_nested("firebase_auth", "project_id")
+    firebase_credentials = get_firebase_credentials()
+    project_id = secrets["firebase_auth"]["project_id"]  # or secrets.get_nested("firebase_auth", "project_id")
     
     db = firestore.Client(credentials=firebase_credentials, project=project_id)
     return db
