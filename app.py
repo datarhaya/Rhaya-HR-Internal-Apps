@@ -11,11 +11,12 @@ check_authentication()
 
 with open( pathlib.Path("app/styles.css") ) as f:
     st.markdown(f'<style>{f.read()}</style>' , unsafe_allow_html= True)
-
+# background-color: #0D2A52;
 st.markdown("""
 <style>
     [data-testid=stSidebar] {
-        background-color: #0D2A52;
+
+        background-color: #006a71;
     }
     /* Change the text color inside sidebar selectbox */
     [data-testid=stSidebar] .stSelectbox label {
@@ -34,3 +35,4 @@ pg = st.navigation(nav)
 add_page_title(pg)
 
 pg.run()
+ 

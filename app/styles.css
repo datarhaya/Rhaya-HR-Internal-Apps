@@ -80,9 +80,6 @@ section[data-testid="stSidebar"] .stSlider {
     color: #f0f0f0; /* Light gray text for list items */
 }
 
-[data-testid=stSidebar] {
-    background-color: #0D2A52;
-}
 /* Change the text color inside sidebar selectbox */
 [data-testid=stSidebar] .stSelectbox label {
     color: white;
@@ -150,9 +147,10 @@ img {
 
 /* Sidebar background and text color */
 section[data-testid="stSidebar"] {
-    background-color: #002B5B;  /* Dark blue background */
+    background-color: #0D2A52;  /* Dark blue background */
     color: white;
 }
+/* background-color: #48a6a7;  Dark blue background */
 
 /* Force white text for all sidebar content */
 section[data-testid="stSidebar"] * {

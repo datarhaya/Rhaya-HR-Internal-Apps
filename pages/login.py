@@ -18,7 +18,8 @@ def force_password_change_form(username):
     
     password_manager = PasswordManager()
     
-    with st.form("force_password_change"):
+    # FIXED: Use a different key name for the form
+    with st.form("password_change_form"):
         new_password = st.text_input("New Password", type="password", 
                                    help="Minimum 8 characters with uppercase, lowercase, number, and special character")
         confirm_password = st.text_input("Confirm New Password", type="password")
@@ -82,7 +83,8 @@ def force_password_change_form(username):
             if success:
                 st.success("✅ Password updated successfully!")
                 st.balloons()
-                st.session_state.force_password_change = False
+                # FIXED: Use a different session state variable name
+                st.session_state.needs_password_change = False
                 st.info("Redirecting to dashboard...")
                 
                 # Small delay for user to see the success message
@@ -146,8 +148,8 @@ authenticator = check_authentication()
 if is_authenticated() and not check_logout_status():
     username = st.session_state.get("username")
     
-    # Check if user needs to change password (from temp password login)
-    if st.session_state.get("force_password_change", False):
+    # FIXED: Check if user needs to change password using the corrected variable name
+    if st.session_state.get("needs_password_change", False):
         force_password_change_form(username)
         st.stop()
     
@@ -206,7 +208,7 @@ st.markdown("---")
 
 # -- FIXED Custom login form to handle temporary passwords --
 with st.form("login_form"):
-    st.subheader("🔓 Login to Your Account")
+    st.subheader("🔐 Login to Your Account")
     
     username_input = st.text_input("Username", placeholder="Enter your username")
     password_input = st.text_input("Password", type="password", placeholder="Enter your password")
@@ -231,7 +233,8 @@ with st.form("login_form"):
                 # Set session state for authentication
                 st.session_state.authentication_status = True
                 st.session_state.username = username_input
-                st.session_state.force_password_change = True
+                # FIXED: Use the corrected variable name
+                st.session_state.needs_password_change = True
                 
                 # Get user data for display
                 user_data = db.fetch_user_by_username(username_input)
@@ -253,7 +256,8 @@ with st.form("login_form"):
                         st.session_state.authentication_status = True
                         st.session_state.name = user_auth_data.get("name")
                         st.session_state.username = username_input
-                        st.session_state.force_password_change = False
+                        # FIXED: Use the corrected variable name
+                        st.session_state.needs_password_change = False
                         
                         # Fetch and store user data
                         employee_data = db.fetch_user_by_username(username_input)
@@ -296,10 +300,10 @@ with st.expander("🔒 Security Information"):
 
 # Show debug info only in development (remove in production)
 # if st.secrets.get("environment", "production") == "development":
-#     with st.expander("🐛 Debug Info (Dev Only)"):
+#     with st.expander("🛠 Debug Info (Dev Only)"):
 #         st.write("Session State Debug:", {
 #             "authentication_status": st.session_state.get("authentication_status"),
 #             "username": st.session_state.get("username"),
 #             "name": st.session_state.get("name"),
-#             "force_password_change": st.session_state.get("force_password_change", False)
+#             "needs_password_change": st.session_state.get("needs_password_change", False)
 #         })

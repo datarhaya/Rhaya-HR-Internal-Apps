@@ -448,14 +448,15 @@ def main():
     else:
         st.warning("🔒 Password reset for non-authenticated users")
         
-        # Tabs for reset and testing
-        tab1, tab2 = st.tabs(["🔑 Reset Password", "🧪 Test System"])
+        # # Tabs for reset and testing
+        # tab1, tab2 = st.tabs(["🔑 Reset Password", "🧪 Test System"])
         
-        with tab1:
-            forgot_password_form()
+        # with tab1:
+        #     forgot_password_form()
         
-        with tab2:
-            test_password_system()
+        # with tab2:
+        #     test_password_system()
+        forgot_password_form()
     
     # Navigation
     st.markdown("---")

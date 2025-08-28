@@ -363,7 +363,7 @@ IMPORTANT SECURITY INFORMATION:
 
 To use this temporary password:
 1. Go to the login page
-2. Enter your username: {username}
+2. Enter your username
 3. Enter the temporary password above
 4. You will be prompted to change your password immediately
 
